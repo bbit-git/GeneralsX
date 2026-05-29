@@ -52,12 +52,10 @@ Before work, read:
 4. Preserve retail compatibility and determinism.
 5. No band-aids; fix root cause.
 6. Update dev blog before commit.
-7. Use reference repos as patterns, not copy-paste.
 
 ## Reference Repositories
-- **fighter19-dxvk-port**: DXVK + SDL3 + Linux platform patterns.
-- **jmarshall-win64-modern**: OpenAL and 64-bit audio reference.
-- **thesuperhackers-main**: Upstream regression baseline.
+- **thesuperhackers-main**: Upstream sync baseline.
+- **Historical**: fighter19-dxvk-port and jmarshall-win64-modern archived in `references/archive/`.
 
 ## Build Commands
 
@@ -221,7 +219,7 @@ printf "%s" "$body" | rg '\\n' && echo "HAS_LITERAL_BACKSLASH_N=YES" || echo "HA
 - `GeneralsMD/`: Zero Hour.
 - `Generals/`: base game.
 - `Core/`: shared libraries.
-- `references/`: fighter19, jmarshall, thesuperhackers-main.
+- `references/`: thesuperhackers-main, fbraz3-dxvk (active); archive/ (historical).
 - `docs/WORKDIR/`: current work docs.
 - `logs/`: build/run/debug logs.
 

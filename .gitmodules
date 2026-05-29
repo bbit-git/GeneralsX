@@ -1,8 +1,8 @@
-[submodule "references/fighter19-dxvk-port"]
-	path = references/fighter19-dxvk-port
+[submodule "references/archive/fighter19-dxvk-port"]
+	path = references/archive/fighter19-dxvk-port
 	url = https://github.com/Fighter19/CnC_Generals_Zero_Hour.git
-[submodule "references/jmarshall-win64-modern"]
-	path = references/jmarshall-win64-modern
+[submodule "references/archive/jmarshall-win64-modern"]
+	path = references/archive/jmarshall-win64-modern
 	url = https://github.com/jmarshall2323/CnC_Generals_Zero_Hour.git
 [submodule "references/thesuperhackers-main"]
 	path = references/thesuperhackers-main

@@ -6,28 +6,25 @@ applyTo: '**'
 
 GeneralsX is downstream cross-platform port of Command & Conquer: Generals Zero Hour, focused on native Linux/macOS with one SDL3 + DXVK + OpenAL + 64-bit codebase. Windows stays exploratory, not active target.
 
-This is old, large C++ game code, not greenfield. Modernize carefully, keep gameplay intact, and learn from fighter19 and jmarshall instead of inventing new patterns.
+This is old, large C++ game code, not greenfield. Modernize carefully, keep gameplay intact.
 
 ## Project Structure & Upstream Context
 
 ### EA Games Source Release (2024)
-The original Generals/Zero Hour source was released by EA. These refs matter:
+The original Generals/Zero Hour source was released by EA in 2024.
 
 ### TheSuperHackers (Our Upstream Base)
 - **Repository**: `git@github.com:TheSuperHackers/GeneralsGameCode.git`
 - **Use**: upstream sync baseline, Windows compatibility, bugfixes.
 
-### fighter19's DXVK Port (Primary Graphics/Platform Reference)
-- **Repository**: `references/fighter19-dxvk-port/`
-- **Deepwiki Repo**: `Fighter19/CnC_Generals_Zero_Hour`
-- **Use**: DXVK, SDL3, Linux platform patterns.
+### Historical References (Archived)
+Early development phases (2026 Q1-Q2) relied heavily on community ports for pattern research. These have been **fully integrated** and are now archived:
+- **fighter19's DXVK Port**: SDL3, DXVK, Linux platform patterns — integrated in Phase 1-2
+- **jmarshall's Modern Port**: OpenAL audio, 64-bit insights — integrated in Phase 2
 
-### jmarshall's Port (Audio/Modernization Reference)
-- **Repository**: `references/jmarshall-win64-modern/`
-- **Deepwiki Repo**: `jmarshall2323/CnC_Generals_Zero_Hour`
-- **Use**: OpenAL and modern toolchain patterns.
+See `references/README.md` for details. GeneralsX has evolved beyond these implementations with additional fixes and platform-specific work.
 
-Use local Deepwiki repo `fbraz3/GeneralsX` for navigation when helpful.
+Use local Deepwiki repo `fbraz3/GeneralsX` for current codebase navigation.
 
 ## Our Mission
 
@@ -52,11 +49,9 @@ Use local Deepwiki repo `fbraz3/GeneralsX` for navigation when helpful.
 
 **Strategy**:
 1. Base on TheSuperHackers.
-2. Adapt fighter19 for graphics/platform.
-3. Adapt jmarshall for audio.
-4. Use SDL3 on all platforms.
-5. Prefer Zero Hour first, then shared Generals backports.
-6. Keep diffs small and platform code isolated.
+2. Use SDL3 + DXVK + OpenAL stack (fully integrated).
+3. Prefer Zero Hour first, then shared Generals backports.
+4. Keep diffs small and platform code isolated.
 
 **Far-Future Plans**:
 - SDL3 graphics backend if it makes sense.
@@ -78,13 +73,11 @@ Use local Deepwiki repo `fbraz3/GeneralsX` for navigation when helpful.
 
 1. **IMPERATIVE** -- No band-aids or workarounds, only real solutions.
 2. **Single codebase** -- Linux and macOS must build from the same source. Keep Windows-compatible architectural decisions when practical, but do not treat Windows as an equal active target unless the user explicitly asks for it.
-3. Use the `fighter19` reference repo because it successfully made DXVK + SDL3 work on Linux.
-4. The `jmarshall` repo has the working OpenAL implementation and 64-bit insights.
-5. The focus is cross-platform without breaking any existing platform -- be very careful when removing things.
-6. Use DXVK which provides d3d8.h and translates DirectX 8 to Vulkan.
-7. SDL3 is the unified platform layer -- no native POSIX, Win32, or Cocoa calls in game code.
-8. Some solutions from `fighter19` and `jmarshall` may involve removing components; in that case, stop and ask the user what should be done, as it may be something the game depends on and cannot be removed (e.g., audio, video playback).
-9. Any lesson learned should be documented in `docs/WORKDIR/lessons` for future reference and to avoid repeating mistakes. You should also consult that directory for insights from previous sessions.
+3. DXVK provides d3d8.h and translates DirectX 8 to Vulkan.
+4. SDL3 is the unified platform layer -- no native POSIX, Win32, or Cocoa calls in game code.
+5. OpenAL handles all audio (3D positioning, streaming, format conversion).
+6. The focus is cross-platform without breaking any existing platform -- be very careful when removing things.
+7. Any lesson learned should be documented in `docs/WORKDIR/lessons` for future reference and to avoid repeating mistakes. You should also consult that directory for insights from previous sessions.
 
 ## Development Environment & Build System
 
@@ -239,43 +232,22 @@ git merge thesuperhackers/main
 
 ## Available Reference Repositories
 
-**CRITICAL**: Use references to understand patterns and architecture, **NOT** for copy-paste. Each reference has different scope and must be adapted for Zero Hour.
-
-### 1. fighter19's DXVK Port (`references/fighter19-dxvk-port/`)
-**Use for**: Graphics layer (DXVK), SDL3 integration, MinGW build setup, POSIX compat
-**Coverage**: Generals + Zero Hour
-**Status**: Fully functional Linux build
-
-Key files to study:
-- `GeneralsMD/Code/GameEngineDevice/` -- DXVK device management
-- `Core/Libraries/Source/Platform/` -- POSIX abstractions
-- `CMakePresets.json` -- MinGW build configuration
-- `cmake/mingw.cmake` -- Cross-compilation setup
-
-### 2. jmarshall's Modern Port (`references/jmarshall-win64-modern/`)
-**Use for**: OpenAL audio implementation, 64-bit porting insights
-**Coverage**: Generals base game ONLY (**NOT Zero Hour**)
-**Status**: Fully functional modern Windows build with working audio
-
-Key files to study:
-- `Code/Audio/` -- OpenAL implementation (adapt for Zero Hour)
-- `Code/Audio/MusicManager.cpp` -- Audio format handling
-
-**Caution**: Generals-only; must adapt for Zero Hour expansion features.
-
-### 3. TheSuperHackers Main (`references/thesuperhackers-main/`)
-**Use for**: Upstream baseline, Windows behavior reference
+### TheSuperHackers Main (`references/thesuperhackers-main/`)
+**Use for**: Upstream baseline, Windows behavior reference, upstream sync
 **Coverage**: Generals + Zero Hour (upstream source)
+**Status**: Active upstream
 
-### Reference Consultation Workflow
+### Historical References (Archived)
+See `references/archive/` for fighter19 and jmarshall ports. These were instrumental during Phase 1-3 (graphics/audio/video) but are no longer actively consulted. GeneralsX has evolved beyond these implementations.
+
+### Development Workflow
 
 **Before implementing a feature**:
 1. Read relevant active design/support documentation in `docs/WORKDIR/`
-2. Study fighter19 implementation (if graphics/platform)
-3. Study jmarshall implementation (if audio/modernization)
-4. Document differences and adaptation strategy
-5. Implement with platform isolation in mind
-6. Validate builds on all affected platforms
+2. Check `docs/WORKDIR/lessons/` for past insights
+3. Document new patterns and decisions
+4. Implement with platform isolation in mind
+5. Validate builds on all affected platforms
 
 ## Project Directory Structure
 
@@ -288,10 +260,10 @@ Key files to study:
   /Libraries           - Utility libraries (WWVegas, math, containers)
   /Tools               - Development tools (W3DView, MapCacheBuilder)
 /Dependencies          - External dependencies (MaxSDK, utilities)
-/references            - Reference implementations (fighter19, jmarshall)
-  /fighter19-dxvk-port/   - DXVK Linux port (PRIMARY GRAPHICS REFERENCE)
-  /jmarshall-win64-modern/ - OpenAL port (PRIMARY AUDIO REFERENCE)
-  /thesuperhackers-main/   - Upstream snapshot (MERGE REFERENCE)
+/references            - Reference implementations
+  /archive/              - Historical references (fighter19, jmarshall)
+  /thesuperhackers-main/ - Upstream snapshot (MERGE REFERENCE)
+  /fbraz3-dxvk/          - DXVK macOS fork (ACTIVE DEVELOPMENT)
 /docs                  - Project documentation
   /DEV_BLOG            - Development diary (REQUIRED before commits)
   /WORKDIR             - Active work documentation
