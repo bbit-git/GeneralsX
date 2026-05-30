@@ -24,6 +24,16 @@ endif()
 # macOS port option (Phase 5)
 option(SAGE_USE_MOLTENVK "Use MoltenVK for Vulkan on macOS (Phase 5 macOS port)" OFF)
 
+# Android / mobile port option (Phase 6)
+# Use the d3d8gles3 backend (Direct3D 8 -> OpenGL ES 3.0) instead of DXVK.
+# Targets devices whose Vulkan drivers cannot satisfy DXVK 2.x requirements
+# (VK_EXT_transform_feedback, maintenance5/6, Vulkan 1.3). Mutually exclusive
+# with SAGE_USE_DX8 and the DXVK path — enforced in cmake/dx8.cmake.
+option(SAGE_USE_GLES3 "Use the d3d8gles3 (D3D8->OpenGL ES 3.0) backend (Android/mobile)" OFF)
+if(SAGE_USE_GLES3 AND SAGE_USE_MOLTENVK)
+    message(FATAL_ERROR "SAGE_USE_GLES3 and SAGE_USE_MOLTENVK are mutually exclusive backends")
+endif()
+
 if(NOT RTS_BUILD_ZEROHOUR AND NOT RTS_BUILD_GENERALS)
     set(RTS_BUILD_ZEROHOUR TRUE)
     message("You must select one project to build, building Zero Hour by default.")
@@ -41,6 +51,7 @@ add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg sup
 add_feature_info(SDL3Windowing SAGE_USE_SDL3 "Using SDL3 for windowing (Linux)")
 add_feature_info(OpenALAudio SAGE_USE_OPENAL "Using OpenAL for audio (Linux)")
 add_feature_info(UpdateCheck SAGE_UPDATE_CHECK "In-game update check via GitHub Releases API")
+add_feature_info(GLES3Backend SAGE_USE_GLES3 "Using d3d8gles3 (D3D8->OpenGL ES 3.0) backend (Android)")
 
 set(RTS_BUILD_OUTPUT_SUFFIX "" CACHE STRING "Suffix appended to output names of installable targets")
 
@@ -124,6 +135,12 @@ endif()
 if(SAGE_USE_GLM)
     target_compile_definitions(core_config INTERFACE SAGE_USE_GLM)
     message(STATUS "GLM math library enabled (DirectX 8 replacement)")
+endif()
+
+# Android / mobile GLES3 backend (Phase 6)
+if(SAGE_USE_GLES3)
+    target_compile_definitions(core_config INTERFACE SAGE_USE_GLES3)
+    message(STATUS "d3d8gles3 (D3D8 -> OpenGL ES 3.0) backend enabled")
 endif()
 
 # macOS MoltenVK detection (Phase 5)
