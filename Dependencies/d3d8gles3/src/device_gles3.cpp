@@ -127,8 +127,9 @@ void GLES3Device::SetMaterial(const void* p) {
 
 void GLES3Device::SetLight(uint32_t index, const void* p) {
     if (index >= kMaxLights) return;
-    // D3DLIGHT8: Type(uint), Diffuse(4f), Specular(4f), Ambient(4f),
-    // Position(3f), Direction(3f), Range,Falloff,Att0,Att1,Att2,Theta,Phi...
+    // D3DLIGHT8 float layout: Type(0), Diffuse(1-4), Specular(5-8), Ambient(9-12),
+    // Position(13-15), Direction(16-18), Range(19), Falloff(20),
+    // Attenuation0/1/2(21,22,23), Theta(24), Phi(25).
     const auto* u = static_cast<const uint32_t*>(p);
     const float* f = reinterpret_cast<const float*>(u);
     Light& L = lights_[index];
@@ -137,7 +138,7 @@ void GLES3Device::SetLight(uint32_t index, const void* p) {
     std::memcpy(L.ambient, f + 9, sizeof(float)*4);
     std::memcpy(L.pos,     f + 13, sizeof(float)*3);
     std::memcpy(L.dir,     f + 16, sizeof(float)*3);
-    L.atten[0] = f[20]; L.atten[1] = f[21]; L.atten[2] = f[22];
+    L.atten[0] = f[21]; L.atten[1] = f[22]; L.atten[2] = f[23];
 }
 void GLES3Device::LightEnable(uint32_t index, bool enable) {
     if (index < kMaxLights) lights_[index].enabled = enable;

@@ -20,12 +20,21 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
   cube/volume textures; mip auto-gen.
 
 ## COM ABI shim (`d3d8_entry.cpp`, needs `<d3d8.h>`)
-- ⬜ `Direct3DCreate8` + `IDirect3D8` (single GLES3 adapter, caps, EnumAdapterModes)
-- ⬜ `IDirect3DDevice8` vtable — forwarding map documented in the file header;
-  hot-path ~25 methods first, rest `D3D_OK`/`E_NOTIMPL`.
-- ⬜ Resource interface wrappers (VB/IB/Texture/Surface) over the GL resources.
-- ⬜ Render-to-texture / `SetRenderTarget` / `CopyRects` via FBOs.
+- ✅ `Direct3DCreate8` + `IDirect3D8` (single GLES3 adapter, caps, EnumAdapterModes,
+  CheckDevice* permissive).
+- ✅ `IDirect3DDevice8` — full vtable (all ~90 methods, exact signatures from
+  mingw-directx-headers). Hot path forwards to the GLES3 core; long tail
+  (state blocks, palettes, software/programmable shaders, ProcessVertices,
+  gamma, DrawPrimitiveUP) is safe no-op / `D3DERR_INVALIDCALL`.
+- ✅ Resource wrappers: `VertexBuffer8`, `IndexBuffer8`, `Texture8` (refcounted
+  `Unknown<>` base, forward Lock/Unlock/LockRect/GetDesc to GL resources).
+- ⬜ `Surface8` wrapper + render-to-texture / `SetRenderTarget` / `CopyRects`
+  via FBOs (currently `D3DERR_INVALIDCALL`).
+- ⬜ Cube/volume textures (`CreateCubeTexture`/`CreateVolumeTexture` stubbed).
 - ⬜ Additional swap chains (windowed multi-view) — likely unsupported on Android.
+- ⚠️ Not yet compiled against real `<d3d8.h>` (needs the NDK/host-GLES build with
+  DXVK_INCLUDE_DIR populated) — signatures authored from the verbatim header but
+  unverified by a compiler. First on-target build will shake out any mismatches.
 
 ## Texture ops (D3DTEXTUREOP) coverage in `ffp_shader_gen`
 - ✅ DISABLE, SELECTARG1/2, MODULATE/2X/4X, ADD, ADDSIGNED/2X, SUBTRACT,
