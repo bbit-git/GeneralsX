@@ -33,6 +33,7 @@ static void TestVertexShader() {
     CONTAINS(vs, "normalize(mat3(uWorld)");   // normal transform for lighting
     CONTAINS(vs, "uLightDiffuse[0]");         // one directional light unrolled
     CONTAINS(vs, "vTex0 = aTex0");            // texcoord routing
+    CONTAINS(vs, "aDiffuse.bgra");            // D3DCOLOR BGRA swizzle to RGBA
 }
 
 static void TestFragmentShader() {

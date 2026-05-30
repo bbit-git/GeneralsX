@@ -288,13 +288,75 @@ void GLES3Device::ApplyFixedFunctionUniforms(const FFPProgram& prog) {
     if (prog.uAlphaRef >= 0) glUniform1f(prog.uAlphaRef, (renderStates_[RS_ALPHAREF] & 0xFF) / 255.0f);
 }
 
+// D3DFVF bits we decode.
+enum {
+    FVF_POSITION_MASK=0x00E, FVF_XYZ=0x002, FVF_XYZRHW=0x004,
+    FVF_NORMAL=0x010, FVF_PSIZE=0x020, FVF_DIFFUSE=0x040, FVF_SPECULAR=0x080,
+    FVF_TEXCOUNT_MASK=0xF00, FVF_TEXCOUNT_SHIFT=8
+};
+
+// Fixed attribute locations — must match ffp_shader_gen's `layout(location=N)`.
+enum { LOC_POS=0, LOC_NORMAL=1, LOC_DIFFUSE=2, LOC_SPECULAR=3, LOC_TEX0=4 };
+
+// Float count of the position component (incl. blend weights for XYZBn).
+static uint32_t PositionFloats(uint32_t fvf) {
+    switch (fvf & FVF_POSITION_MASK) {
+        case FVF_XYZ:    return 3;
+        case FVF_XYZRHW: return 4;
+        case 0x006:      return 4; // XYZB1 (3 + 1 weight)
+        case 0x008:      return 5; // XYZB2
+        case 0x00A:      return 6; // XYZB3
+        case 0x00C:      return 7; // XYZB4
+        case 0x00E:      return 8; // XYZB5
+        default:         return 3;
+    }
+}
+
+// Floats per texcoord set N, from the FVF high-word size bits (default 2).
+static uint32_t TexCoordSize(uint32_t fvf, int set) {
+    const uint32_t bits = (fvf >> (16 + set * 2)) & 0x3;
+    switch (bits) { case 1: return 3; case 2: return 4; case 3: return 1; default: return 2; }
+}
+
 void GLES3Device::BindVertexAttributes(const FFPProgram&) {
-    // Bind stream 0 and configure attribute pointers from the FVF layout.
-    // (Stream layout decode lives in resources_gles3 alongside the FVF parser;
-    // this is the integration point — see STATUS.md item "FVF attribute binding".)
-    if (streamVB_[0]) streamVB_[0]->BindAs(GL_ARRAY_BUFFER);
+    if (!streamVB_[0]) return;
+    streamVB_[0]->BindAs(GL_ARRAY_BUFFER);
     if (indexBuffer_) indexBuffer_->BindAs(GL_ELEMENT_ARRAY_BUFFER);
-    // TODO(android): glVertexAttribPointer per FVF field using streamStride_[0].
+
+    const GLsizei stride = static_cast<GLsizei>(streamStride_[0]);
+    const uint32_t fvf = fvf_;
+    uintptr_t off = 0;
+    auto attrib = [&](GLuint loc, GLint size, GLenum type, GLboolean norm, uint32_t bytes) {
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, size, type, norm, stride,
+                              reinterpret_cast<const void*>(off));
+        off += bytes;
+    };
+
+    // start every draw from a known-clean attribute set
+    for (GLuint l = LOC_POS; l <= LOC_TEX0 + 7; ++l) glDisableVertexAttribArray(l);
+
+    // 1) position (bind xyz, or xyzw for RHW); advance past any blend weights
+    const uint32_t posFloats = PositionFloats(fvf);
+    const bool rhw = (fvf & FVF_POSITION_MASK) == FVF_XYZRHW;
+    attrib(LOC_POS, rhw ? 4 : 3, GL_FLOAT, GL_FALSE, posFloats * 4);
+
+    // 2) normal
+    if (fvf & FVF_NORMAL) attrib(LOC_NORMAL, 3, GL_FLOAT, GL_FALSE, 3 * 4);
+
+    // point size — not a shader attribute; just skip its bytes
+    if (fvf & FVF_PSIZE) off += 4;
+
+    // 3) diffuse / 4) specular — D3DCOLOR: 4 normalised bytes (BGRA; shader swizzles)
+    if (fvf & FVF_DIFFUSE)  attrib(LOC_DIFFUSE,  4, GL_UNSIGNED_BYTE, GL_TRUE, 4);
+    if (fvf & FVF_SPECULAR) attrib(LOC_SPECULAR, 4, GL_UNSIGNED_BYTE, GL_TRUE, 4);
+
+    // 5) texture coordinate sets
+    const uint32_t texCount = (fvf & FVF_TEXCOUNT_MASK) >> FVF_TEXCOUNT_SHIFT;
+    for (uint32_t i = 0; i < texCount; ++i) {
+        const uint32_t sz = TexCoordSize(fvf, static_cast<int>(i));
+        attrib(LOC_TEX0 + i, static_cast<GLint>(sz), GL_FLOAT, GL_FALSE, sz * 4);
+    }
 }
 
 void GLES3Device::ApplyState(uint32_t /*primType*/) {

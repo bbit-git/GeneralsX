@@ -80,13 +80,19 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
 
     s += "void main(){\n";
 
+    // D3DCOLOR vertex attributes arrive BGRA (little-endian DWORD read as 4
+    // normalised bytes), so swizzle .bgra to get RGBA the rest of the shader
+    // expects. White/black defaults when the FVF omits the colour.
+    s += "  vec4 inDiffuse = "  + std::string(k.hasDiffuse  ? "aDiffuse.bgra"  : "vec4(1.0)") + ";\n";
+    s += "  vec4 inSpecular = " + std::string(k.hasSpecular ? "aSpecular.bgra" : "vec4(0.0)") + ";\n";
+
     if (k.isPretransformed) {
         // XYZRHW: aPos is already in screen space with 1/w in .w. The engine
         // pre-divides; we pass straight to clip space. (Viewport mapping done by
         // the device via glViewport; here we assume normalised input.)
         s += "  gl_Position = vec4(aPos.xyz, 1.0);\n";
-        s += "  vColor = " + std::string(k.hasDiffuse ? "aDiffuse" : "vec4(1.0)") + ";\n";
-        s += "  vSpecular = " + std::string(k.hasSpecular ? "aSpecular" : "vec4(0.0)") + ";\n";
+        s += "  vColor = inDiffuse;\n";
+        s += "  vSpecular = inSpecular;\n";
     } else {
         s += "  vec4 worldPos = uWorld * aPos;\n";
         s += "  vec4 viewPos = uView * worldPos;\n";
@@ -95,7 +101,7 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
         if (k.lightingEnabled && k.hasNormal) {
             s += "  vec3 N = normalize(mat3(uWorld) * aNormal);\n";
             // material diffuse source: vertex color if COLORVERTEX, else material
-            std::string matDiff = (k.colorVertex && k.hasDiffuse) ? "aDiffuse" : "uMaterialDiffuse";
+            std::string matDiff = (k.colorVertex && k.hasDiffuse) ? "inDiffuse" : "uMaterialDiffuse";
             s += "  vec4 matDiffuse = " + matDiff + ";\n";
             s += "  vec3 litColor = uGlobalAmbient.rgb*uMaterialAmbient.rgb + uMaterialEmissive.rgb;\n";
             for (int i = 0; i < k.numLights; ++i) {
@@ -116,9 +122,9 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
             }
             s += "  vColor = vec4(litColor, matDiffuse.a);\n";
         } else {
-            s += "  vColor = " + std::string(k.hasDiffuse ? "aDiffuse" : "vec4(1.0)") + ";\n";
+            s += "  vColor = inDiffuse;\n";
         }
-        s += "  vSpecular = " + std::string(k.hasSpecular ? "aSpecular" : "vec4(0.0)") + ";\n";
+        s += "  vSpecular = inSpecular;\n";
 
         if (k.fogEnabled) {
             // eye-space distance for fog (positive); pixel fog recomputes factor

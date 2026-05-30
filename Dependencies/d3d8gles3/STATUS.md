@@ -10,8 +10,10 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
   Unit-tested (string output). 🟡 texture-op coverage: see "Texture ops" below.
 - 🟡 `device_gles3` — state caching, blend/depth/stencil/cull apply, FFP uniform
   upload (transforms, material, lights, fog, tfactor, alpha-ref), Clear, draw
-  dispatch. **Gaps:** FVF→`glVertexAttribPointer` binding (`BindVertexAttributes`
-  is a stub), texture-matrix uniforms, point-sprite path, vertex fog factor in VS.
+  dispatch, ✅ FVF→`glVertexAttribPointer` binding (position incl. XYZRHW/blend
+  weights, normal, D3DCOLOR diffuse/specular with BGRA swizzle, N texcoord sets
+  with per-set size). **Gaps:** texture-matrix uniforms, point-sprite path,
+  vertex fog factor in VS.
 - 🟡 `resources_gles3` — VB/IB create+lock/unlock (CPU-shadow upload), texture
   create+lock/unlock, sampler state, BGRA swizzle. **Gaps:** CPU DXT decode when
   `GL_EXT_texture_compression_s3tc` absent (currently magenta placeholder);
