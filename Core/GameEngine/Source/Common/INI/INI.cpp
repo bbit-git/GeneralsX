@@ -59,7 +59,9 @@
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Weapon.h"
 
-#if __cplusplus >= 201611L && !defined(__APPLE__)
+// Android's libc++ (like Apple's) deletes the floating-point std::from_chars
+// overload, so fall back to the sscanf-based parser there too.
+#if __cplusplus >= 201611L && !defined(__APPLE__) && !defined(__ANDROID__)
 #define USE_STD_FROM_CHARS_PARSING 1
 #else
 #define USE_STD_FROM_CHARS_PARSING 0

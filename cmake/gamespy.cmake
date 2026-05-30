@@ -8,3 +8,10 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(gamespy)
+
+# Android (bionic) has no pthread_cancel, which GameSpy's gsthreadlinux.c calls.
+# Force-include a no-op shim into its common lib rather than patching upstream.
+if(ANDROID AND TARGET gscommon)
+    target_compile_options(gscommon PRIVATE
+        -include ${CMAKE_CURRENT_LIST_DIR}/android-pthread-compat.h)
+endif()

@@ -63,6 +63,22 @@ if(SAGE_USE_DX8)
     target_link_directories(d3d8lib INTERFACE
         ${dx8_SOURCE_DIR}/lib
     )
+elseif(SAGE_USE_GLES3)
+    # Android: the d3d8gles3 backend implements the D3D8 COM ABI; the headers
+    # come from the headers-only DXVK fetch populated by cmake/gles3.cmake.
+    # d3d8.h lives in include/native/directx, with windows.h shims in
+    # include/native/windows (DXVK_INCLUDE_DIR == include/native).
+    if(NOT DXVK_INCLUDE_DIR)
+        message(FATAL_ERROR "DXVK_INCLUDE_DIR not set; cmake/gles3.cmake must populate the D3D8 ABI headers (SAGE_USE_GLES3)")
+    endif()
+    target_include_directories(d3d8lib INTERFACE
+        ${DXVK_INCLUDE_DIR}
+        ${DXVK_INCLUDE_DIR}/windows
+        ${DXVK_INCLUDE_DIR}/directx
+    )
+    # No target_link_directories: d3d8gles3 (linked via core_config) supplies
+    # Direct3DCreate8 — there is no prebuilt DXVK .so to link against.
+
 else()
     # Linux + macOS: Use ONLY DXVK headers (not min-dx8-sdk) to avoid conflicts
     # DXVK provides complete Wine-compatible DirectX 8 headers

@@ -40,8 +40,16 @@ if(SAGE_USE_SDL3)
     set(SDL_VIDEO ON CACHE BOOL "Enable video subsystem" FORCE)
     
     # Platform support
-    set(SDL_WAYLAND ON CACHE BOOL "Enable Wayland support (Linux)" FORCE)
-    set(SDL_X11 ON CACHE BOOL "Enable X11 support (Linux)" FORCE)
+    if(ANDROID)
+        # Android has neither X11 nor Wayland; SDL3 uses its built-in Android
+        # video driver (EGL/GLES). Forcing X11/Wayland ON would make SDL3 probe
+        # for dev libs that do not exist in the NDK sysroot.
+        set(SDL_WAYLAND OFF CACHE BOOL "No Wayland on Android" FORCE)
+        set(SDL_X11 OFF CACHE BOOL "No X11 on Android" FORCE)
+    else()
+        set(SDL_WAYLAND ON CACHE BOOL "Enable Wayland support (Linux)" FORCE)
+        set(SDL_X11 ON CACHE BOOL "Enable X11 support (Linux)" FORCE)
+    endif()
     set(SDL_CAMERA OFF CACHE BOOL "Disable camera (unused)" FORCE)
     set(SDL_QSPI OFF CACHE BOOL "Disable QSPI (unused)" FORCE)
     
@@ -51,7 +59,12 @@ if(SAGE_USE_SDL3)
     # Before SDL3_image build: force PNG discovery to platform-specific libpng
     # Linux: System libpng16.so is dynamic shared library
     # macOS: Use Homebrew PNG or system framework
-    if(NOT APPLE)
+    if(ANDROID)
+        # Android (NDK cross-build): the sysroot ships no image libraries, and a
+        # host probe would wrongly match the build machine's x86_64 libpng. Skip
+        # system discovery entirely — SDL3_image builds its bundled decoders
+        # statically below (SDL3IMAGE_VENDORED).
+    elseif(NOT APPLE)
         # Find system shared libpng, bypassing vcpkg's static .a.
         # SDL3_image requires a shared .so but vcpkg only provides static libpng16.a.
         # NO_CMAKE_PATH + NO_CMAKE_FIND_ROOT_PATH skips all vcpkg-injected search paths,
@@ -107,13 +120,32 @@ if(SAGE_USE_SDL3)
     # Configure SDL3_image build options
     # Note: PNG will use system libpng-dev (installed in Docker, no vcpkg conflicts)
     set(SDL3IMAGE_INSTALL ON CACHE BOOL "Install SDL3_image" FORCE)
-    set(SDL3IMAGE_DEPS_SHARED ON CACHE BOOL "Use system shared dependencies" FORCE)
-    set(SDL3IMAGE_JPG ON CACHE BOOL "Enable JPG support" FORCE)
-    set(SDL3IMAGE_PNG ON CACHE BOOL "Enable PNG support (ANI cursor loading)" FORCE)
-    set(SDL3IMAGE_TIF ON CACHE BOOL "Enable TIF support" FORCE)
-    set(SDL3IMAGE_WEBP ON CACHE BOOL "Enable WebP support" FORCE)
     set(SDL3IMAGE_AVIF OFF CACHE BOOL "Disable AVIF (optional)" FORCE)
-    set(SDL3IMAGE_XCUR ON CACHE BOOL "Enable X cursor support" FORCE)
+    if(ANDROID)
+        # SDL3_image's real option prefix is SDLIMAGE_ (not SDL3IMAGE_). The NDK
+        # sysroot ships no image libraries and the release tarball bundles no
+        # vendored sources (external/ holds only a download script), so neither
+        # the system-shared nor the vendored path works. Instead use the built-in
+        # stb_image backend (handles PNG + JPG with no external libs) and turn off
+        # libpng. ICO (cursor loading) is decoded by SDL_image's core regardless.
+        set(SDLIMAGE_VENDORED OFF CACHE BOOL "No vendored sources in tarball" FORCE)
+        set(SDLIMAGE_DEPS_SHARED OFF CACHE BOOL "No dlopen of system .so" FORCE)
+        set(SDLIMAGE_BACKEND_STB ON CACHE BOOL "Decode PNG/JPG via bundled stb_image" FORCE)
+        set(SDLIMAGE_JPG ON CACHE BOOL "Enable JPG (stb)" FORCE)
+        set(SDLIMAGE_PNG ON CACHE BOOL "Enable PNG (stb)" FORCE)
+        set(SDLIMAGE_PNG_LIBPNG OFF CACHE BOOL "Use stb for PNG, not libpng" FORCE)
+        set(SDLIMAGE_TIF OFF CACHE BOOL "No TIFF on Android" FORCE)
+        set(SDLIMAGE_WEBP OFF CACHE BOOL "No WebP on Android" FORCE)
+        set(SDLIMAGE_JXL OFF CACHE BOOL "No JXL on Android" FORCE)
+        set(SDLIMAGE_AVIF OFF CACHE BOOL "No AVIF on Android" FORCE)
+    else()
+        set(SDL3IMAGE_DEPS_SHARED ON CACHE BOOL "Use system shared dependencies" FORCE)
+        set(SDL3IMAGE_JPG ON CACHE BOOL "Enable JPG support" FORCE)
+        set(SDL3IMAGE_PNG ON CACHE BOOL "Enable PNG support (ANI cursor loading)" FORCE)
+        set(SDL3IMAGE_TIF ON CACHE BOOL "Enable TIF support" FORCE)
+        set(SDL3IMAGE_WEBP ON CACHE BOOL "Enable WebP support" FORCE)
+        set(SDL3IMAGE_XCUR ON CACHE BOOL "Enable X cursor support" FORCE)
+    endif()
     
     FetchContent_MakeAvailable(SDL3_image)
     

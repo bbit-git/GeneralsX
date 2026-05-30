@@ -344,7 +344,7 @@ public:
     HRESULT STDMETHODCALLTYPE GetCurrentTexturePalette(UINT* p) override { if (p) *p = 0; return S_OK; }
     HRESULT STDMETHODCALLTYPE DrawPrimitive(D3DPRIMITIVETYPE, UINT, UINT) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void*, UINT) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void*, UINT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE, UINT, UINT, UINT, const void*, D3DFORMAT, const void*, UINT) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE ProcessVertices(UINT, UINT, UINT, IDirect3DVertexBuffer8*, DWORD) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE CreateVertexShader(const DWORD*, const DWORD*, DWORD*, DWORD) override { return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE GetVertexShader(DWORD* h) override { if (h) *h = 0; return S_OK; }
@@ -362,6 +362,11 @@ public:
     HRESULT STDMETHODCALLTYPE SetPixelShaderConstant(DWORD, const void*, DWORD) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetPixelShaderConstant(DWORD, void*, DWORD) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetPixelShaderFunction(DWORD, void*, DWORD*) override { return S_OK; }
+
+    // Higher-order surface patches — unused by WW3D2; no-op to complete the vtable.
+    HRESULT STDMETHODCALLTYPE DrawRectPatch(UINT, const float*, const D3DRECTPATCH_INFO*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE DrawTriPatch(UINT, const float*, const D3DTRIPATCH_INFO*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE DeletePatch(UINT) override { return S_OK; }
 
 private:
     IDirect3D8* parent_;

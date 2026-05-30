@@ -182,9 +182,11 @@ elseif(APPLE AND SAGE_USE_MOLTENVK)
   message(STATUS "DXVK source directory: ${DXVK_SOURCE_DIR}")
   message(STATUS "DXVK d3d8 library:     ${DXVK_D3D8_LIB}")
 
-else()
+elseif(NOT SAGE_USE_GLES3)
   # Linux: Fetch pre-built DXVK native binary for DirectX→Vulkan translation
   # Native 32-bit and 64-bit Linux binaries (.so)
+  # NOTE: skipped under SAGE_USE_GLES3 (Android), which uses the d3d8gles3
+  # backend instead — the steamrt tarball is x86_64 and has no place there.
   FetchContent_Declare(
     dxvk
     URL        https://github.com/doitsujin/dxvk/releases/download/v2.6/dxvk-native-2.6-steamrt-sniper.tar.gz

@@ -70,10 +70,6 @@ endif()
 # On Linux: DXVK headers (for D3D8→Vulkan translation)
 include(cmake/dx8.cmake)
 
-# Android/mobile: D3D8 -> OpenGL ES 3.0 backend (alternative to DXVK).
-# No-op unless SAGE_USE_GLES3 is ON.
-include(cmake/gles3.cmake)
-
 # SDL3 windowing/input for Linux builds (Phase 1)
 # GeneralsX @build BenderAI 11/02/2026
 if(SAGE_USE_SDL3)
@@ -88,6 +84,13 @@ else()
 endif()
 
 include(cmake/config.cmake)
+
+# Android/mobile: D3D8 -> OpenGL ES 3.0 backend (alternative to DXVK).
+# No-op unless SAGE_USE_GLES3 is ON. Included after config.cmake because it
+# wires the backend into core_config (defined there) and uses SDL3::SDL3
+# (from sdl3.cmake above) for context creation.
+include(cmake/gles3.cmake)
+
 include(cmake/gamespy.cmake)
 include(cmake/lzhl.cmake)
 

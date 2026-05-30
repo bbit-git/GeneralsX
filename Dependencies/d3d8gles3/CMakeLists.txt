@@ -16,12 +16,26 @@ target_include_directories(d3d8gles3
         ${CMAKE_CURRENT_SOURCE_DIR}/include   # our Direct3DCreate8 entry decl
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        # The engine adds Generals/Code/CompatLib/Include globally (top-level
+        # CMakeLists), so <windows.h> in d3d8_entry.cpp resolves to CompatLib's
+        # Win32 shim rather than DXVK's. That shim includes bittype.h from
+        # WWLib — add it so the COM-ABI TU compiles the same way CompatLib's
+        # own d3dx8 does (which already links this path).
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib
 )
 
 # Reuse the same d3d8.h ABI the rest of the tree compiles against. On Android
 # DXVK_INCLUDE_DIR is populated (headers-only) by cmake/gles3.cmake.
 if(DXVK_INCLUDE_DIR)
-    target_include_directories(d3d8gles3 PUBLIC ${DXVK_INCLUDE_DIR})
+    # DXVK_INCLUDE_DIR == include/native: d3d8.h is under directx/, windows.h
+    # shims under windows/. Expose all three PUBLICly so both this backend and
+    # the engine (which inherits these via core_config -> d3d8gles3) resolve
+    # <d3d8.h> the same way the macOS DXVK-native layout does.
+    target_include_directories(d3d8gles3 PUBLIC
+        ${DXVK_INCLUDE_DIR}
+        ${DXVK_INCLUDE_DIR}/windows
+        ${DXVK_INCLUDE_DIR}/directx
+    )
 endif()
 
 # GLES3 + EGL. On Android these come from the NDK sysroot; SDL3 owns context

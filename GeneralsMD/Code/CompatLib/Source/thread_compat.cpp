@@ -58,5 +58,14 @@ void* CreateThread(void *lpSecure, size_t dwStackSize, start_routine lpStartAddr
 
 int TerminateThread(void *hThread, unsigned long dwExitCode)
 {
+#if defined(__ANDROID__)
+	// bionic (Android libc) provides no pthread_cancel; forced thread
+	// termination is unsupported there. Treat as a no-op — the engine uses
+	// cooperative shutdown paths instead.
+	(void)hThread;
+	(void)dwExitCode;
+	return 0;
+#else
 	return pthread_cancel((pthread_t)hThread);
+#endif
 }

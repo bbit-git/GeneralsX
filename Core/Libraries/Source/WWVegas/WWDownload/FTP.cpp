@@ -30,7 +30,9 @@
 // Platform headers with socket_compat.h providing Winsock → POSIX mapping
 #include <stdio.h>
 #include <sys/types.h>
-#include <sys/timeb.h>
+#ifndef __ANDROID__
+#include <sys/timeb.h>  // obsolete ftime(); absent on Android bionic and unused here
+#endif
 #include <stdlib.h>
 #ifdef _WIN32
 #include <process.h>
