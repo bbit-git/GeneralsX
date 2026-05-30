@@ -374,11 +374,20 @@ Render2DSentenceClass::Build_Textures ()
 		REF_PTR_RELEASE (texture_surface);
 
 		//
-		//	Assign this texture to any renderers that need it
+		//	Assign this texture to any renderers that draw this surface.
 		//
-		for (int renderer_index = 0; renderer_index < surface_info.Renderers.Count (); renderer_index ++) {
-			Render2DClass *renderer = surface_info.Renderers[renderer_index];
-			renderer->Set_Texture (new_texture);
+		//	GeneralsX @bugfix: previously this iterated surface_info.Renderers, a
+		//	DynamicVectorClass nested inside the DynamicVectorClass<PendingSurfaceStruct>.
+		//	Under some heap layouts two PendingSurfaceStruct entries ended up sharing one
+		//	inner Renderers backing array (aliased pointer), so it was double-freed and the
+		//	element read back as nullptr -> Set_Texture(this==nullptr) segfault (shell map /
+		//	skirmish GUI text). The flat member Renderers list maps surface->renderer
+		//	reliably, so use it directly and avoid the fragile nested vector entirely.
+		//
+		for (int renderer_index = 0; renderer_index < Renderers.Count (); renderer_index ++) {
+			if (Renderers[renderer_index].Surface == curr_surface) {
+				Renderers[renderer_index].Renderer->Set_Texture (new_texture);
+			}
 		}
 
 		//
@@ -457,14 +466,14 @@ Render2DSentenceClass::Draw_Sentence (uint32 color)
 				Renderers.Add (render_info);
 
 				//
-				//	Now, add this renderer to the surface pending list
+				//	GeneralsX @bugfix: do NOT populate the per-surface
+				//	PendingSurfaceStruct::Renderers nested vector here. Nesting a
+				//	DynamicVectorClass inside DynamicVectorClass<PendingSurfaceStruct>
+				//	could alias backing arrays across entries and double-free them,
+				//	corrupting the pointer Build_Textures later dereferences. Build_Textures
+				//	now resolves the renderer for each surface from the flat member
+				//	Renderers list above, so this index is no longer needed.
 				//
-				for (int surface_index = 0; surface_index < PendingSurfaces.Count (); surface_index ++) {
-					PendingSurfaceStruct &surface_info = PendingSurfaces[surface_index];
-					if (surface_info.Surface == curr_surface) {
-						surface_info.Renderers.Add (curr_renderer);
-					}
-				}
 			}
 		}
 

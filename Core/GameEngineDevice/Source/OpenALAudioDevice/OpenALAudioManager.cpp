@@ -716,6 +716,7 @@ void OpenALAudioManager::playAudioEvent(AudioEventRTS* event)
 #endif
 	const AudioEventInfo* info = event->getAudioEventInfo();
 	if (!info) {
+		releaseAudioEventRTS(event);	// GeneralsX @bugfix: we own `event` now; free it on early-out
 		return;
 	}
 
@@ -771,6 +772,7 @@ void OpenALAudioManager::playAudioEvent(AudioEventRTS* event)
 		if (!file) {
 			DEBUG_LOG(("Failed to open file: %s\n", fileToPlay.str()));
 			releasePlayingAudio(audio);
+			releaseAudioEventRTS(event);	// GeneralsX @bugfix: we own `event` now; free it on early-out
 			return;
 		}
 
@@ -779,6 +781,7 @@ void OpenALAudioManager::playAudioEvent(AudioEventRTS* event)
 		{
 			DEBUG_LOG(("Failed to open FFmpeg file: %s\n", fileToPlay.str()));
 			releasePlayingAudio(audio);
+			releaseAudioEventRTS(event);	// GeneralsX @bugfix: we own `event` now; free it on early-out
 			return;
 		}
 
@@ -3081,7 +3084,13 @@ void OpenALAudioManager::processRequest(AudioRequest* req)
 	{
 	case AR_Play:
 	{
-		playAudioEvent(req->m_pendingEvent);
+		// GeneralsX @bugfix: hand ownership of the pending event to playAudioEvent
+		// (which stores it in a PlayingAudio with m_cleanupAudioEventRTS == true, or
+		// frees it on an early failure). Previously the event pointer was passed while
+		// m_usePendingEvent stayed true, so ~AudioRequest in processRequestList() also
+		// deleted it -> double free / use-after-free crash in OpenALAudioManager::update.
+		// Mirrors the Miles backend, which stores `event = req->releasePendingEvent()`.
+		playAudioEvent(req->releasePendingEvent());
 		break;
 	}
 	case AR_Pause:
