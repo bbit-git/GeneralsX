@@ -590,7 +590,7 @@ static void SDL3_ApplyWindowModeForRenderConfig(Bool windowed, Int renderWidth, 
 }
 #endif
 
-// Filtered resolution cache — built once, clamps widths to 4:3..16:9 and deduplicates.
+// Filtered resolution cache — built once, clamps widths to 4:3..native-aspect (>= 16:9) and deduplicates.
 struct FilteredRes { Int w, h, bits; };
 static std::vector<FilteredRes> s_filteredResolutions;
 static bool s_filteredDirty = true;
@@ -613,6 +613,12 @@ static void buildFilteredResolutions()
 		if (nativeH > 0 && h > nativeH) continue;
 		Int minW = h * 4 / 3;
 		Int maxW = h * 16 / 9;
+		// GeneralsX @feature widescreen Allow ultrawide (>16:9) up to the native display
+		// aspect ratio so 21:9/32:9 monitors keep their real modes; 16:9 is unaffected.
+		if (nativeW > 0 && nativeH > 0) {
+			Int nativeMaxW = h * nativeW / nativeH;
+			if (nativeMaxW > maxW) maxW = nativeMaxW;
+		}
 		if (w < minW) w = minW;
 		if (w > maxW) w = maxW;
 		bool duplicate = false;
