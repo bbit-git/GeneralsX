@@ -12,6 +12,10 @@
 #include <cstring>
 #include <cstdio>
 
+// SDL3 owns the GL context/window; Present() flips it. SDL3 is linked PUBLIC to
+// this backend (see CMakeLists.txt), so this include resolves on every platform.
+#include <SDL3/SDL_video.h>
+
 namespace d3d8gles3 {
 
 // D3DRENDERSTATETYPE values the device reads. (Subset actually used by WW3D2.)
@@ -88,7 +92,11 @@ void GLES3Device::Clear(bool color, bool depthStencil, const float rgba[4],
 
 void GLES3Device::BeginScene() { /* nothing: GLES has no scene begin */ }
 void GLES3Device::EndScene()   { glFlush(); }
-void GLES3Device::Present()    { /* SDL_GL_SwapWindow done by window layer */ }
+void GLES3Device::Present()    {
+    // Flip the SDL-owned GL context. swapWindow_ is the SDL_Window* handed down
+    // from D3D8 CreateDevice (null in host unit tests -> no-op).
+    if (swapWindow_) SDL_GL_SwapWindow(static_cast<SDL_Window*>(swapWindow_));
+}
 
 void GLES3Device::SetViewport(int x, int y, int w, int h, float, float) {
     // D3D viewport origin is top-left; GL is bottom-left. Flip Y.

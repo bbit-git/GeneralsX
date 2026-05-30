@@ -250,6 +250,34 @@
         "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
         "VCPKG_TARGET_TRIPLET": "arm64-android",
         "ANDROID_ABI": "arm64-v8a",
+        "_comment_pkgconfig": "Make pkg_check_modules(FFMPEG ...) resolve from the vcpkg tree (CMAKE_PREFIX_PATH) instead of the host system ffmpeg-dev, which would leak host glibc headers into the NDK build.",
+        "PKG_CONFIG_USE_CMAKE_PREFIX_PATH": "ON",
+        "ANDROID_PLATFORM": "android-28",
+        "SAGE_USE_DX8": "OFF",
+        "SAGE_USE_SDL3": "ON",
+        "SAGE_USE_OPENAL": "ON",
+        "SAGE_USE_GLM": "ON",
+        "SAGE_USE_GLES3": "ON",
+        "SAGE_UPDATE_CHECK": "OFF",
+        "RTS_CRASHDUMP_ENABLE": "OFF",
+        "RTS_BUILD_OPTION_FFMPEG": "ON",
+        "RTS_BUILD_GENERALS": "ON",
+        "RTS_BUILD_ZEROHOUR": "OFF"
+      }
+    },
+    {
+      "name": "android-gles3-x64",
+      "displayName": "Android x86_64 (D3D8->OpenGL ES 3.0)",
+      "description": "Android x86_64 build (emulator) using the d3d8gles3 backend, SDL3 windowing and OpenAL. Requires ANDROID_NDK_HOME.",
+      "inherits": "default-vcpkg",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-android",
+        "ANDROID_ABI": "x86_64",
+        "_comment_pkgconfig": "Make pkg_check_modules(FFMPEG ...) resolve from the vcpkg tree (CMAKE_PREFIX_PATH) instead of the host system ffmpeg-dev, which would leak host glibc headers into the NDK build.",
+        "PKG_CONFIG_USE_CMAKE_PREFIX_PATH": "ON",
         "ANDROID_PLATFORM": "android-28",
         "SAGE_USE_DX8": "OFF",
         "SAGE_USE_SDL3": "ON",
@@ -372,7 +400,13 @@
       "name": "android-gles3",
       "configurePreset": "android-gles3",
       "displayName": "Build Android arm64 (d3d8gles3 / SDL3 / OpenAL)",
-      "description": "Build Zero Hour for Android arm64 with the OpenGL ES 3.0 backend"
+      "description": "Build Generals for Android arm64 with the OpenGL ES 3.0 backend"
+    },
+    {
+      "name": "android-gles3-x64",
+      "configurePreset": "android-gles3-x64",
+      "displayName": "Build Android x86_64 (d3d8gles3 / SDL3 / OpenAL)",
+      "description": "Build Generals for Android x86_64 (emulator) with the OpenGL ES 3.0 backend"
     }
   ],
   "workflowPresets": [

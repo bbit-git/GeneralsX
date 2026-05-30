@@ -179,9 +179,15 @@ private:
 // ---------------------------------------------------------------------------
 class Device8 final : public Unknown<IDirect3DDevice8> {
 public:
-    Device8(IDirect3D8* parent, const D3DPRESENT_PARAMETERS& pp) : parent_(parent) {
+    Device8(IDirect3D8* parent, const D3DPRESENT_PARAMETERS& pp, HWND focusWindow) : parent_(parent) {
         int w = pp.BackBufferWidth  ? static_cast<int>(pp.BackBufferWidth)  : 800;
         int h = pp.BackBufferHeight ? static_cast<int>(pp.BackBufferHeight) : 600;
+        // The HWND is the SDL_Window* on the SDL3 ports. Prefer the present
+        // params' device window, else the CreateDevice focus window. Present()
+        // uses it for SDL_GL_SwapWindow.
+        void* win = pp.hDeviceWindow ? reinterpret_cast<void*>(pp.hDeviceWindow)
+                                     : reinterpret_cast<void*>(focusWindow);
+        core_.SetSwapWindow(win);
         core_.Init(w, h);
         s3tc_ = false; // queried inside core_.Init via GL extensions
     }
@@ -403,11 +409,11 @@ public:
     HRESULT STDMETHODCALLTYPE CheckDepthStencilMatch(UINT, D3DDEVTYPE, D3DFORMAT, D3DFORMAT, D3DFORMAT) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetDeviceCaps(UINT, D3DDEVTYPE, D3DCAPS8* c) override { Device8::FillCaps(c); return S_OK; }
     HMONITOR STDMETHODCALLTYPE GetAdapterMonitor(UINT) override { return nullptr; }
-    HRESULT STDMETHODCALLTYPE CreateDevice(UINT, D3DDEVTYPE, HWND, DWORD,
+    HRESULT STDMETHODCALLTYPE CreateDevice(UINT, D3DDEVTYPE, HWND hFocusWindow, DWORD,
                                            D3DPRESENT_PARAMETERS* pp,
                                            IDirect3DDevice8** out) override {
         if (!out || !pp) return E_POINTER;
-        *out = new (std::nothrow) Device8(this, *pp);
+        *out = new (std::nothrow) Device8(this, *pp, hFocusWindow);
         return *out ? S_OK : E_OUTOFMEMORY;
     }
 };

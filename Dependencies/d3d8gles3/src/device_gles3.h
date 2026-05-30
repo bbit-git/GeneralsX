@@ -34,8 +34,13 @@ public:
     void Clear(bool color, bool depthStencil, const float rgba[4], float z, uint32_t stencil);
     void BeginScene();
     void EndScene();
-    void Present();         // SDL_GL_SwapWindow happens in the window layer
+    void Present();         // SDL_GL_SwapWindow on the bound window (set via SetSwapWindow)
     void SetViewport(int x, int y, int w, int h, float minZ, float maxZ);
+
+    // The SDL window whose GL context the device renders into. Passed down from
+    // the D3D8 CreateDevice HWND (which is the SDL_Window* on the SDL3 ports).
+    // Present() flips this window; if null, Present() is a no-op (host tests).
+    void SetSwapWindow(void* sdlWindow) { swapWindow_ = sdlWindow; }
 
     // --- state (deferred; flushed at draw) -----------------------------------
     void SetRenderState(uint32_t state, uint32_t value);
@@ -63,6 +68,9 @@ private:
     void   ApplyFixedFunctionUniforms(const FFPProgram& prog);
     void   ApplyBlendDepthStencilCull();
     void   BindVertexAttributes(const FFPProgram& prog);
+
+    // ---- presentation ----
+    void* swapWindow_ = nullptr;   // SDL_Window* to SDL_GL_SwapWindow in Present()
 
     // ---- cached D3D state ----
     static constexpr int kNumRenderStates = 256;
