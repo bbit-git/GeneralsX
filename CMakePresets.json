@@ -259,8 +259,8 @@
         "SAGE_UPDATE_CHECK": "OFF",
         "RTS_CRASHDUMP_ENABLE": "OFF",
         "RTS_BUILD_OPTION_FFMPEG": "ON",
-        "RTS_BUILD_GENERALS": "OFF",
-        "RTS_BUILD_ZEROHOUR": "ON"
+        "RTS_BUILD_GENERALS": "ON",
+        "RTS_BUILD_ZEROHOUR": "OFF"
       }
     }
   ],
