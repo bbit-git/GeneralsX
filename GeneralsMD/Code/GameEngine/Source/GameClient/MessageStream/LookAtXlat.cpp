@@ -288,6 +288,8 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			m_middleButtonDownTimeMsec = now;
 
 			m_isRotating = true;
+			// Middle-drag also pitches the camera (vertical), alongside yaw (horizontal).
+			m_isPitching = true;
 			m_anchor = msg->getArgument( 0 )->pixel;
 			m_anchorAngle = TheTacticalView->getAngle();
 			m_originalAnchor = msg->getArgument( 0 )->pixel;
