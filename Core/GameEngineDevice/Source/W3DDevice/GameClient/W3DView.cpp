@@ -3750,6 +3750,21 @@ void W3DView::updateTerrain()
 		drawHeight = WorldHeightMap::LOW_ANGLE_DRAW_HEIGHT;
 	}
 
+	// GeneralsX @bugfix Draw the whole map's terrain. The windowed NORMAL/LOW_ANGLE draw
+	// sizes (#2677) are centered on the frustum-visible region, whose extent is clamped by
+	// the window-derived far-Z. On this SDL3 port the camera is raised for wide aspect ratios
+	// (Mauller's aspect height compensation), so the window-relative-to-view centering leaves
+	// part of the visible ground outside the drawn window -> black terrain that follows the
+	// draw-window's world-aligned edge as a diagonal seam on screen. Sizing the window to the
+	// full map makes the centering irrelevant: the whole battlefield is always covered, and
+	// because the window no longer scrolls there is no per-frame strip re-streaming.
+	// @todo A view-fitted window would save VB memory on very large maps (revisit for Android).
+	if (TheTerrainRenderObject->getMap())
+	{
+		drawWidth  = TheTerrainRenderObject->getMap()->getXExtent();
+		drawHeight = TheTerrainRenderObject->getMap()->getYExtent();
+	}
+
 	TheTerrainRenderObject->setTerrainDrawSize(drawWidth, drawHeight);
 	TheTerrainRenderObject->updateCenter(m_3DCamera, &cameraPivot, it);
 
