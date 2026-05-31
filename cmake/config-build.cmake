@@ -92,7 +92,11 @@ if(MSVC)
 endif()
 
 if(UNIX)
-    target_compile_definitions(core_config INTERFACE _UNIX)
+    # GameSpy's gsplatform.h also defines _UNIX with an empty replacement list.
+    # Match that spelling so TUs including GameSpy headers do not warn about a
+    # command-line `_UNIX=1` redefinition. target_compile_definitions(_UNIX=)
+    # emits -D_UNIX="", so pass the exact compiler spelling as an option.
+    target_compile_options(core_config INTERFACE $<$<COMPILE_LANGUAGE:C,CXX>:-D_UNIX=>)
     # Ubuntu 24.04+ and macOS have strlcpy/strlcat/wcslcpy/wcslcat in libc
     # GeneralsX @TheSuperHackers @build BenderAI 11/02/2026 Added guards for glibc 2.38+
     target_compile_definitions(core_config INTERFACE 
