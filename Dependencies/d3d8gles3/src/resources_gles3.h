@@ -69,6 +69,7 @@ private:
     bool     needsSwizzle_ = false;
     bool     decompressOnUpload_ = false;  // DXT but no S3TC ext
     bool     expand1555_ = false;          // D3D A1R5G5B5 -> RGBA8 on upload
+    bool     expand4444_ = false;          // D3D A4R4G4B4 -> RGBA8 on upload
     bool     isRenderTarget_ = false;      // D3DUSAGE_RENDERTARGET: FBO-backed
     std::vector<Level> levelData_;
 };

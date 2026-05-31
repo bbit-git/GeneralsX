@@ -161,13 +161,19 @@ bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
     // word's MSB, GL's UNSIGNED_SHORT_5_5_5_1 puts it at the LSB), so the bit
     // fields don't line up and a channel swizzle can't fix it. Expand to RGBA8.
     expand1555_ = (d3dFormat == 25 /*D3DFMT_A1R5G5B5*/) && !renderTarget;
+    // D3D A4R4G4B4 [A:4][R:4][G:4][B:4] (MSB->LSB). GL's UNSIGNED_SHORT_4_4_4_4 +
+    // a channel-rotate swizzle is the textbook mapping, but it renders miscoloured
+    // (tan reads green) on the GLES translators we target — the packed-format +
+    // per-texture swizzle combination is unreliable. CPU-expand to RGBA8 instead,
+    // exactly as for A1R5G5B5, so the channel order is baked in with no swizzle.
+    expand4444_ = (d3dFormat == 26 /*D3DFMT_A4R4G4B4*/) && !renderTarget;
 
     glGenTextures(1, &glTexture_);
     glBindTexture(GL_TEXTURE_2D, glTexture_);
 
     // Render targets always need real, immediately-renderable RGBA8 storage (they
     // are never Lock/Unlock-uploaded); force the storage path for them.
-    const bool storage = renderTarget || (!compressed_ && !expand1555_ && fmt.supported);
+    const bool storage = renderTarget || (!compressed_ && !expand1555_ && !expand4444_ && fmt.supported);
     if (storage) {
         const GLenum internalFmt = renderTarget ? GL_RGBA8 : fmt.internalFormat;
         glTexStorage2D(GL_TEXTURE_2D, static_cast<GLsizei>(levels_), internalFmt,
@@ -262,11 +268,40 @@ void GLTexture::UnlockRect(uint32_t level) {
         glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), GL_RGBA8,
                      static_cast<GLsizei>(L.w), static_cast<GLsizei>(L.h), 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    } else if (expand4444_) {
+        // D3D A4R4G4B4 [A:4][R:4][G:4][B:4] (MSB->LSB) -> RGBA8 (each nibble
+        // expanded to 8 bits by replication).
+        const size_t n = static_cast<size_t>(L.w) * L.h;
+        std::vector<uint8_t> rgba(n * 4);
+        const uint16_t* src = reinterpret_cast<const uint16_t*>(L.staging.data());
+        for (size_t i = 0; i < n; ++i) {
+            const uint16_t p = src[i];
+            const uint8_t a = (p >> 12) & 0xF, r = (p >> 8) & 0xF,
+                          g = (p >> 4) & 0xF, b = p & 0xF;
+            rgba[i*4+0] = static_cast<uint8_t>((r << 4) | r);
+            rgba[i*4+1] = static_cast<uint8_t>((g << 4) | g);
+            rgba[i*4+2] = static_cast<uint8_t>((b << 4) | b);
+            rgba[i*4+3] = static_cast<uint8_t>((a << 4) | a);
+        }
+        glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), GL_RGBA8,
+                     static_cast<GLsizei>(L.w), static_cast<GLsizei>(L.h), 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     } else {
         glTexSubImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), 0, 0,
                         static_cast<GLsizei>(L.w), static_cast<GLsizei>(L.h),
                         fmt.format, fmt.type, L.staging.data());
     }
+
+    // The engine creates mipmapped textures (levels_>1) but fills ONLY level 0 —
+    // it relied on D3D's runtime mip generation, which this shim doesn't replicate.
+    // A texture with declared-but-undefined higher levels samples garbage (or is
+    // mip-incomplete) when minified, showing as coloured "woven" speckle on distant
+    // objects. Generate the chain from level 0. (If the engine ever does upload a
+    // higher level, that later glTexImage/glTexSubImage just overwrites ours.)
+    // Skipped for real S3TC — not GL-mipmap-generatable — but the CPU decode/expand
+    // paths are all RGBA8 and safe.
+    if (level == 0 && levels_ > 1 && !(compressed_ && !decompressOnUpload_))
+        glGenerateMipmap(GL_TEXTURE_2D);
 }
 
 void GLTexture::ApplySamplerState(uint32_t* tss) {
