@@ -341,9 +341,11 @@ int main(int argc, char* argv[])
 #if defined(__ANDROID__)
 			// GeneralsX @feature Android d3d8gles3 bring-up.
 			// No DXVK/Vulkan on Android: the d3d8gles3 backend renders into an
-			// SDL-owned OpenGL ES 3.0 context. Touch acts as mouse so the existing
-			// mouse path (SDL3Mouse / SDL3GameEngine) drives the menus unchanged.
-			SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+			// SDL-owned OpenGL ES 3.0 context.
+			// BlueOps @feature Touch gestures: SDL3TouchGestures owns the finger
+			// stream and synthesises its own mouse events, so disable SDL's
+			// built-in touch->mouse synthesis to avoid double input.
+			SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 			SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 
 			// Request a GLES 3.0 context (d3d8gles3 uses VAOs, which require ES3).

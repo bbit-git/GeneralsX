@@ -35,6 +35,7 @@
 #endif
 #include "SDL3Device/GameClient/SDL3Mouse.h"
 #include "SDL3Device/GameClient/SDL3Keyboard.h"
+#include "SDL3Device/GameClient/SDL3TouchGestures.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/GameWindow.h"
@@ -321,6 +322,16 @@ void SDL3GameEngine::pollSDL3Events(void)
 				handleWindowEvent(event.window);
 				break;
 
+			case SDL_EVENT_FINGER_DOWN:
+			case SDL_EVENT_FINGER_MOTION:
+			case SDL_EVENT_FINGER_UP:
+				// BlueOps @feature Android touch gestures. The recognizer owns the
+				// finger stream and synthesises mouse events / drives the tactical
+				// camera. SDL touch->mouse synthesis is disabled (see SDL3Main.cpp)
+				// so this is the only consumer of finger input.
+				SDL3TouchGestures::handleFingerEvent(event);
+				break;
+
 			default:
 				// Ignore other events for now
 				break;
@@ -328,6 +339,9 @@ void SDL3GameEngine::pollSDL3Events(void)
 
 		updateTextInputState();
 	}
+
+	// Drive time-based gesture transitions (hold-to-select) each pump.
+	SDL3TouchGestures::tick();
 }
 
 // GeneralsX @bugfix felipebraz 01/04/2026 Enable SDL text input only while an entry gadget owns focus.
