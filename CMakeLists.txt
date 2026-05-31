@@ -50,6 +50,11 @@ include(cmake/compilers.cmake)
 # Debug symbol stripping for Release builds (MinGW)
 include(cmake/debug_strip.cmake)
 
+# 16 KB ELF segment alignment on Android (Play Store / 16 KB-page devices).
+# Must come before any FetchContent/add_subdirectory of shared targets (SDL3,
+# SDL3_image, OpenAL) so they inherit the linker flag.
+include(cmake/page_size.cmake)
+
 include(FetchContent)
 
 # MinGW-w64 specific configuration
