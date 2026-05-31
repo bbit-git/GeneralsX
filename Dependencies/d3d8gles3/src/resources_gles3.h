@@ -53,6 +53,15 @@ public:
     void  UnlockRect(uint32_t level);
 
     void Bind() const { glBindTexture(GL_TEXTURE_2D, glTexture_); }
+    // Resolve the four sampler params (wrap S/T, mag, min) this stage's D3D
+    // texture-stage state implies, into out[4]. Pure; touches no GL state.
+    void ResolveSampler(const uint32_t* stageStates, GLint out[4]) const;
+    // True if applying `stageStates` would change any GL sampler param vs. what was
+    // last applied to this texture — lets the device skip the glActiveTexture/bind
+    // and the four glTexParameteri calls when nothing changed (the common UI case).
+    bool SamplerNeedsUpdate(const uint32_t* stageStates) const;
+    // Apply (and remember) the stage's sampler state. Assumes this texture is
+    // already bound to the active unit — the device binds before calling.
     void ApplySamplerState(uint32_t* stageStates); // wrap/filter from D3DTSS
 
     uint32_t Width()  const { return width_; }
@@ -71,6 +80,10 @@ private:
     bool     expand1555_ = false;          // D3D A1R5G5B5 -> RGBA8 on upload
     bool     expand4444_ = false;          // D3D A4R4G4B4 -> RGBA8 on upload
     bool     isRenderTarget_ = false;      // D3DUSAGE_RENDERTARGET: FBO-backed
+    // Last sampler params applied to this texture (wrapS, wrapT, mag, min) so
+    // redundant per-draw glTexParameteri calls can be skipped. -1 = unknown,
+    // forcing the first apply after (re)creation.
+    GLint    sampler_[4] = { -1, -1, -1, -1 };
     std::vector<Level> levelData_;
 };
 

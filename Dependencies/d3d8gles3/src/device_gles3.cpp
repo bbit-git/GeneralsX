@@ -84,8 +84,15 @@ bool GLES3Device::Init(int w, int h) {
     renderStates_[RS_ZWRITEENABLE] = 1;  // TRUE
     renderStates_[RS_ZFUNC]        = 4;  // D3DCMP_LESSEQUAL
 
+    // Fresh GL context: nothing we cached about live GL state is trustworthy.
+    InvalidateGLStateCache();
+
     initialized_ = true;
     return true;
+}
+
+void GLES3Device::InvalidateGLStateCache() {
+    gl_ = GLStateCache{};   // valid=false → next draw re-emits the full pipeline
 }
 
 void GLES3Device::Shutdown() {
@@ -103,6 +110,9 @@ void GLES3Device::OnContextLost() {
     vao_ = 0;
     upVBO_ = 0; upIBO_ = 0;   // GL objects are gone with the context
     rtFBO_ = 0; rtDepthRB_ = 0; rtDepthW_ = 0; rtDepthH_ = 0;
+    // The shadowed live-GL state (program/blend/tex bindings/...) referred to GL
+    // objects that no longer exist; drop it so the next draw re-emits everything.
+    InvalidateGLStateCache();
 }
 
 void GLES3Device::EnsureUPBuffers() {
@@ -125,6 +135,7 @@ void GLES3Device::Clear(bool color, bool depthStencil, const float rgba[4],
         glClearDepthf(z);
         glClearStencil(static_cast<GLint>(stencil));
         glDepthMask(GL_TRUE);   // depth clear needs depth writes enabled
+        gl_.depthWrite = true;  // keep the state cache in sync with this direct poke
         mask |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
     }
     if (mask) { glClear(mask); ++g_dbgClear; }
@@ -316,45 +327,61 @@ FFPKey GLES3Device::BuildFFPKey() const {
 }
 
 void GLES3Device::ApplyBlendDepthStencilCull() {
+    // Every block below is gated on the live-GL state cache: emit the GL call only
+    // when the wanted value differs from what we last set (or the cache is invalid
+    // after a context loss). The 2D GUI draws hundreds of quads/text-runs a frame
+    // with identical blend/depth state, so this elides almost all of these calls.
+    const bool force = !gl_.valid;
+
     // Z
-    if (renderStates_[RS_ZENABLE]) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    glDepthFunc(MapCompareFunc(renderStates_[RS_ZFUNC] ? renderStates_[RS_ZFUNC] : 4));
-    glDepthMask(renderStates_[RS_ZWRITEENABLE] ? GL_TRUE : GL_FALSE);
+    const bool zt = renderStates_[RS_ZENABLE] != 0;
+    if (force || gl_.depthTest != zt) { if (zt) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); gl_.depthTest = zt; }
+    const GLenum df = MapCompareFunc(renderStates_[RS_ZFUNC] ? renderStates_[RS_ZFUNC] : 4);
+    if (force || gl_.depthFunc != df) { glDepthFunc(df); gl_.depthFunc = df; }
+    const bool dw = renderStates_[RS_ZWRITEENABLE] != 0;
+    if (force || gl_.depthWrite != dw) { glDepthMask(dw ? GL_TRUE : GL_FALSE); gl_.depthWrite = dw; }
 
     // Blend
-    if (renderStates_[RS_ALPHABLENDENABLE]) {
-        glEnable(GL_BLEND);
-        glBlendEquation(MapBlendOp(renderStates_[RS_BLENDOP] ? renderStates_[RS_BLENDOP] : 1));
-        glBlendFunc(MapBlendFactor(renderStates_[RS_SRCBLEND] ? renderStates_[RS_SRCBLEND] : 2),
-                    MapBlendFactor(renderStates_[RS_DESTBLEND] ? renderStates_[RS_DESTBLEND] : 1));
-    } else {
-        glDisable(GL_BLEND);
+    const bool be = renderStates_[RS_ALPHABLENDENABLE] != 0;
+    if (force || gl_.blend != be) { if (be) glEnable(GL_BLEND); else glDisable(GL_BLEND); gl_.blend = be; }
+    if (be) {
+        const GLenum eq = MapBlendOp(renderStates_[RS_BLENDOP] ? renderStates_[RS_BLENDOP] : 1);
+        if (force || gl_.blendEq != eq) { glBlendEquation(eq); gl_.blendEq = eq; }
+        const GLenum bs = MapBlendFactor(renderStates_[RS_SRCBLEND] ? renderStates_[RS_SRCBLEND] : 2);
+        const GLenum bd = MapBlendFactor(renderStates_[RS_DESTBLEND] ? renderStates_[RS_DESTBLEND] : 1);
+        if (force || gl_.blendSrc != bs || gl_.blendDst != bd) { glBlendFunc(bs, bd); gl_.blendSrc = bs; gl_.blendDst = bd; }
     }
 
     // Cull
     bool cullEnable; GLenum cullFace;
     MapCull(renderStates_[RS_CULLMODE] ? renderStates_[RS_CULLMODE] : 3, cullEnable, cullFace);
-    if (cullEnable) { glEnable(GL_CULL_FACE); glCullFace(cullFace); } else glDisable(GL_CULL_FACE);
+    if (force || gl_.cull != cullEnable) { if (cullEnable) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE); gl_.cull = cullEnable; }
+    if (cullEnable && (force || gl_.cullFace != cullFace)) { glCullFace(cullFace); gl_.cullFace = cullFace; }
 
     // Stencil
-    if (renderStates_[RS_STENCILENABLE]) {
-        glEnable(GL_STENCIL_TEST);
-        glStencilFunc(MapCompareFunc(renderStates_[RS_STENCILFUNC] ? renderStates_[RS_STENCILFUNC] : 8),
-                      static_cast<GLint>(renderStates_[RS_STENCILREF]),
-                      renderStates_[RS_STENCILMASK] ? renderStates_[RS_STENCILMASK] : 0xFFFFFFFF);
-        glStencilOp(MapStencilOp(renderStates_[RS_STENCILFAIL] ? renderStates_[RS_STENCILFAIL] : 1),
-                    MapStencilOp(renderStates_[RS_STENCILZFAIL] ? renderStates_[RS_STENCILZFAIL] : 1),
-                    MapStencilOp(renderStates_[RS_STENCILPASS] ? renderStates_[RS_STENCILPASS] : 1));
-    } else {
-        glDisable(GL_STENCIL_TEST);
+    const bool se = renderStates_[RS_STENCILENABLE] != 0;
+    if (force || gl_.stencil != se) { if (se) glEnable(GL_STENCIL_TEST); else glDisable(GL_STENCIL_TEST); gl_.stencil = se; }
+    if (se) {
+        const GLenum fn = MapCompareFunc(renderStates_[RS_STENCILFUNC] ? renderStates_[RS_STENCILFUNC] : 8);
+        const GLint  rf = static_cast<GLint>(renderStates_[RS_STENCILREF]);
+        const GLuint mk = renderStates_[RS_STENCILMASK] ? renderStates_[RS_STENCILMASK] : 0xFFFFFFFF;
+        if (force || gl_.stFunc != fn || gl_.stRef != rf || gl_.stMask != mk) {
+            glStencilFunc(fn, rf, mk); gl_.stFunc = fn; gl_.stRef = rf; gl_.stMask = mk;
+        }
+        const GLenum sfl = MapStencilOp(renderStates_[RS_STENCILFAIL] ? renderStates_[RS_STENCILFAIL] : 1);
+        const GLenum szf = MapStencilOp(renderStates_[RS_STENCILZFAIL] ? renderStates_[RS_STENCILZFAIL] : 1);
+        const GLenum spa = MapStencilOp(renderStates_[RS_STENCILPASS] ? renderStates_[RS_STENCILPASS] : 1);
+        if (force || gl_.stFail != sfl || gl_.stZFail != szf || gl_.stPass != spa) {
+            glStencilOp(sfl, szf, spa); gl_.stFail = sfl; gl_.stZFail = szf; gl_.stPass = spa;
+        }
     }
 
     // Z bias -> polygon offset
-    if (renderStates_[RS_ZBIAS]) {
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(-static_cast<float>(renderStates_[RS_ZBIAS]), -static_cast<float>(renderStates_[RS_ZBIAS]));
-    } else {
-        glDisable(GL_POLYGON_OFFSET_FILL);
+    const bool po = renderStates_[RS_ZBIAS] != 0;
+    if (force || gl_.polyOffset != po) { if (po) glEnable(GL_POLYGON_OFFSET_FILL); else glDisable(GL_POLYGON_OFFSET_FILL); gl_.polyOffset = po; }
+    if (po) {
+        const float pf = -static_cast<float>(renderStates_[RS_ZBIAS]);
+        if (force || gl_.poFactor != pf) { glPolygonOffset(pf, pf); gl_.poFactor = pf; gl_.poUnits = pf; }
     }
 }
 
@@ -462,15 +489,18 @@ void GLES3Device::SetupVertexAttributes(int strideIn, uintptr_t baseByteOffset) 
     // attribute's start by baseVertexIndex*stride. The per-vertex field offsets
     // then accumulate on top of it. Zero for non-indexed / user-pointer draws.
     uintptr_t off = baseByteOffset;
+    // Diff the enabled-attribute set against the cache: glVertexAttribPointer must
+    // run every draw (the buffer/offset/stride can differ between draws), but the
+    // enable/disable toggles only change when the FVF layout changes — which it
+    // rarely does within a UI frame. This drops ~12 enable/disable calls per draw.
+    uint32_t newMask = 0;
     auto attrib = [&](GLuint loc, GLint size, GLenum type, GLboolean norm, uint32_t bytes) {
-        glEnableVertexAttribArray(loc);
+        if (!(gl_.enabledAttribs & (1u << loc))) glEnableVertexAttribArray(loc);
         glVertexAttribPointer(loc, size, type, norm, stride,
                               reinterpret_cast<const void*>(off));
+        newMask |= (1u << loc);
         off += bytes;
     };
-
-    // start every draw from a known-clean attribute set
-    for (GLuint l = LOC_POS; l <= LOC_TEX0 + 7; ++l) glDisableVertexAttribArray(l);
 
     // 1) position (bind xyz, or xyzw for RHW); advance past any blend weights
     const uint32_t posFloats = PositionFloats(fvf);
@@ -493,32 +523,47 @@ void GLES3Device::SetupVertexAttributes(int strideIn, uintptr_t baseByteOffset) 
         const uint32_t sz = TexCoordSize(fvf, static_cast<int>(i));
         attrib(LOC_TEX0 + i, static_cast<GLint>(sz), GL_FLOAT, GL_FALSE, sz * 4);
     }
+
+    // Disable only the locations that were enabled last time but aren't now.
+    uint32_t stale = gl_.enabledAttribs & ~newMask;
+    for (GLuint l = LOC_POS; stale; ++l, stale >>= 1)
+        if (stale & 1u) glDisableVertexAttribArray(l);
+    gl_.enabledAttribs = newMask;
 }
 
 bool GLES3Device::ApplyStateCommon() {
-    glBindVertexArray(vao_);
+    if (!gl_.valid || gl_.vao != vao_) { glBindVertexArray(vao_); gl_.vao = vao_; }
     ApplyBlendDepthStencilCull();
 
     FFPKey key = BuildFFPKey();
     const FFPProgram* prog = ffpCache_.GetProgram(key);
     if (!prog) return false;           // generation failed; skip draw (logged)
-    glUseProgram(prog->program);
+    // Bind the program only on change. The FFP sampler uniforms (value == texture
+    // unit, never varies) live in the program object and persist across binds, so
+    // they only need (re)setting when the program object itself changes.
+    const bool programChanged = (!gl_.valid || gl_.program != prog->program);
+    if (programChanged) { glUseProgram(prog->program); gl_.program = prog->program; }
 
     // bind textures + samplers
     for (int i = 0; i < kMaxStages; ++i) {
         if (key.stages[i].colorOp == 1) break;
         if (boundTex_[i] && prog->uSampler[i] >= 0) {
-            glActiveTexture(GL_TEXTURE0 + i);
-            boundTex_[i]->Bind();
+            const GLuint name = boundTex_[i]->GlName();
+            const bool needBind    = !gl_.valid || gl_.tex[i] != name;
             // Apply the stage's D3D sampler state (wrap/filter). Without this every
             // texture keeps GL's default GL_REPEAT, which tiles clamp-addressed art
-            // such as the projected shadow decals into dark streaks.
-            boundTex_[i]->ApplySamplerState(stageStates_[i]);
-            glUniform1i(prog->uSampler[i], i);
+            // such as the projected shadow decals into dark streaks. The texture
+            // remembers its last-applied params, so this is a no-op once warmed up.
+            const bool needSampler = boundTex_[i]->SamplerNeedsUpdate(stageStates_[i]);
+            if (needBind || needSampler) glActiveTexture(GL_TEXTURE0 + i);
+            if (needBind)    { glBindTexture(GL_TEXTURE_2D, name); gl_.tex[i] = name; }
+            if (needSampler) boundTex_[i]->ApplySamplerState(stageStates_[i]);
+            if (programChanged) glUniform1i(prog->uSampler[i], i);
         }
     }
 
     ApplyFixedFunctionUniforms(*prog);
+    gl_.valid = true;
     return true;
 }
 

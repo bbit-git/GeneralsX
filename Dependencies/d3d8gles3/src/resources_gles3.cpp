@@ -150,6 +150,9 @@ bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
                        uint32_t d3dFormat, bool s3tcSupported, bool renderTarget) {
     width_ = w; height_ = h; levels_ = levels ? levels : 1; d3dFormat_ = d3dFormat;
     isRenderTarget_ = renderTarget;
+    // Fresh GL texture object — its sampler params are GL defaults until the first
+    // ApplySamplerState. Mark the cache unknown so that first apply always runs.
+    sampler_[0] = sampler_[1] = sampler_[2] = sampler_[3] = -1;
 
     GLTexFormat fmt = MapTextureFormat(d3dFormat);
     compressed_   = fmt.compressed;
@@ -304,18 +307,36 @@ void GLTexture::UnlockRect(uint32_t level) {
         glGenerateMipmap(GL_TEXTURE_2D);
 }
 
-void GLTexture::ApplySamplerState(uint32_t* tss) {
+void GLTexture::ResolveSampler(const uint32_t* tss, GLint out[4]) const {
     // D3DTSS_ADDRESSU=13, ADDRESSV=14, MAGFILTER=16, MINFILTER=17, MIPFILTER=18
-    glBindTexture(GL_TEXTURE_2D, glTexture_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, MapTextureAddress(tss[13] ? tss[13] : 1));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, MapTextureAddress(tss[14] ? tss[14] : 1));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, MapMagFilter(tss[16] ? tss[16] : 2));
+    out[0] = static_cast<GLint>(MapTextureAddress(tss[13] ? tss[13] : 1)); // WRAP_S
+    out[1] = static_cast<GLint>(MapTextureAddress(tss[14] ? tss[14] : 1)); // WRAP_T
+    out[2] = static_cast<GLint>(MapMagFilter(tss[16] ? tss[16] : 2));      // MAG
     // With only one level a mipmap min-filter makes the texture incomplete (samples
     // black). Force the mip mode off so a stray D3DTSS_MIPFILTER can't blank a
     // non-mipped texture.
     const uint32_t mipF = (levels_ > 1) ? tss[18] : 0;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                    MapMinFilter(tss[17] ? tss[17] : 2, mipF));
+    out[3] = static_cast<GLint>(MapMinFilter(tss[17] ? tss[17] : 2, mipF)); // MIN
+}
+
+bool GLTexture::SamplerNeedsUpdate(const uint32_t* tss) const {
+    GLint want[4];
+    ResolveSampler(tss, want);
+    return want[0] != sampler_[0] || want[1] != sampler_[1] ||
+           want[2] != sampler_[2] || want[3] != sampler_[3];
+}
+
+void GLTexture::ApplySamplerState(uint32_t* tss) {
+    GLint want[4];
+    ResolveSampler(tss, want);
+    // Caller has already bound this texture to the active unit. Set only the
+    // params that actually changed since the last apply to this texture — the 2D
+    // GUI re-binds the same font/gadget textures every draw, so this is almost
+    // always a no-op once warmed up.
+    if (want[0] != sampler_[0]) { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, want[0]); sampler_[0] = want[0]; }
+    if (want[1] != sampler_[1]) { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, want[1]); sampler_[1] = want[1]; }
+    if (want[2] != sampler_[2]) { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, want[2]); sampler_[2] = want[2]; }
+    if (want[3] != sampler_[3]) { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, want[3]); sampler_[3] = want[3]; }
 }
 
 } // namespace d3d8gles3

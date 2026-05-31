@@ -90,6 +90,7 @@ private:
     void   BindVertexAttributes(uintptr_t baseByteOffset = 0); // bind stream VB/IB then attributes
     void   SetupVertexAttributes(int stride, uintptr_t baseByteOffset = 0); // FVF -> attrib pointers (buffer pre-bound)
     void   EnsureUPBuffers();                 // lazily create the transient UP VBO/IBO
+    void   InvalidateGLStateCache();          // forget cached live-GL state (context loss / init)
 
     // ---- presentation ----
     void* swapWindow_ = nullptr;   // SDL_Window* to SDL_GL_SwapWindow in Present()
@@ -127,6 +128,35 @@ private:
 
     GLuint vao_ = 0;             // single VAO reconfigured per draw
     GLuint upVBO_ = 0, upIBO_ = 0; // transient buffers for user-pointer (UP) draws
+
+    // ---- live-GL state cache ----
+    // Shadow of the GL state we last emitted, so per-draw ApplyState* can skip
+    // redundant glEnable/glBlendFunc/glUseProgram/glBindTexture/... calls. The 2D
+    // GUI issues one draw per widget/text-run with near-identical state, so this
+    // collapses thousands of redundant driver calls per frame. `valid` is false
+    // until the first full apply and after any context loss, forcing a re-emit of
+    // everything. Mutators that poke GL directly (Clear's depthMask) update these
+    // fields to stay in sync.
+    struct GLStateCache {
+        bool   valid = false;
+        GLuint program = 0;
+        GLuint vao = 0;
+        // depth
+        bool   depthTest = false; GLenum depthFunc = 0; bool depthWrite = false;
+        // blend
+        bool   blend = false; GLenum blendEq = 0, blendSrc = 0, blendDst = 0;
+        // cull
+        bool   cull = false; GLenum cullFace = 0;
+        // stencil
+        bool   stencil = false; GLenum stFunc = 0; GLint stRef = 0; GLuint stMask = 0;
+        GLenum stFail = 0, stZFail = 0, stPass = 0;
+        // polygon offset (z-bias)
+        bool   polyOffset = false; float poFactor = 0.0f, poUnits = 0.0f;
+        // texture object bound to each unit
+        GLuint tex[kMaxStages] = {};
+        // which vertex-attribute locations are currently enabled (bit i == loc i)
+        uint32_t enabledAttribs = 0;
+    } gl_;
 
     // Render-to-texture (projected shadows). One reused FBO; the depth renderbuffer
     // is recreated when a larger target is bound. defaultFbo_ is whatever was bound
