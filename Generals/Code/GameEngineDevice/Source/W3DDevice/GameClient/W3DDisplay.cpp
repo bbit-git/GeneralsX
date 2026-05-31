@@ -982,10 +982,14 @@ void W3DDisplay::init()
 			return;
 		}
 
+		fprintf(stderr, "DEBUG: W3DDisplay::init render loop done, renderDeviceError=%d\n", (int)renderDeviceError);
 		#ifdef SAGE_USE_SDL3
+		fprintf(stderr, "DEBUG: W3DDisplay::init before SDL3_ApplyWindowModeForRenderConfig w=%d h=%d\n", getWidth(), getHeight());
 		SDL3_ApplyWindowModeForRenderConfig(getWindowed(), getWidth(), getHeight());
+		fprintf(stderr, "DEBUG: W3DDisplay::init after SDL3_ApplyWindowModeForRenderConfig\n");
 		#endif
 
+		fprintf(stderr, "DEBUG: W3DDisplay::init before GameLODManager, TheGameLODManager=%p\n", (void*)TheGameLODManager);
 		//Check if level was never set and default to setting most suitable for system.
 		if (TheGameLODManager->getStaticLODLevel() == STATIC_GAME_LOD_UNKNOWN)
 		{
@@ -1002,13 +1006,19 @@ void W3DDisplay::init()
 			setGamma(TheGlobalData->m_displayGamma,0.0f,1.0f,FALSE);
 	}
 
+	fprintf(stderr, "DEBUG: W3DDisplay::init before initAssets\n");
 	initAssets();
+	fprintf(stderr, "DEBUG: W3DDisplay::init after initAssets, headless=%d\n", (int)TheGlobalData->m_headless);
 
 	if (!TheGlobalData->m_headless)
 	{
+		fprintf(stderr, "DEBUG: W3DDisplay::init before init2DScene\n");
 		init2DScene();
+		fprintf(stderr, "DEBUG: W3DDisplay::init before init3DScene\n");
 		init3DScene();
+		fprintf(stderr, "DEBUG: W3DDisplay::init before W3DShaderManager::init\n");
 		W3DShaderManager::init();
+		fprintf(stderr, "DEBUG: W3DDisplay::init after W3DShaderManager::init\n");
 
 		// Create and initialize the debug display
 		m_nativeDebugDisplay = NEW W3DDebugDisplay();

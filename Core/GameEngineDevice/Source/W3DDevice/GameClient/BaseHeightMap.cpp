@@ -287,29 +287,38 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass()
 	clearAllScorches();
 	m_shroud = nullptr;
 #endif
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [BridgeBuffer]\n"); fflush(stderr);
 	m_bridgeBuffer = NEW W3DBridgeBuffer;
 
 	if (TheGlobalData->m_headless)
 		return;
 
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [TreeBuffer]\n"); fflush(stderr);
 	m_treeBuffer = NEW W3DTreeBuffer;
 
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [PropBuffer]\n"); fflush(stderr);
 	m_propBuffer = NEW W3DPropBuffer;
 
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [BibBuffer]\n"); fflush(stderr);
 	m_bibBuffer = NEW W3DBibBuffer;
 
 	m_curImpassableSlope = 45.0f;	// default to 45 degrees.
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [WaypointBuffer]\n"); fflush(stderr);
 	m_waypointBuffer = NEW W3DWaypointBuffer;
 #ifdef DO_ROADS
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [RoadBuffer]\n"); fflush(stderr);
 	m_roadBuffer = NEW W3DRoadBuffer;
 #endif
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [Shroud]\n"); fflush(stderr);
 #if ENABLE_CONFIGURABLE_SHROUD
 	if (TheGlobalData->m_shroudOn)
 		m_shroud = NEW W3DShroud;
 #else
 	m_shroud = NEW W3DShroud;
 #endif
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [SetCleanupHook]\n"); fflush(stderr);
 	DX8Wrapper::SetCleanupHook(this);
+	fprintf(stderr, "DEBUG: BaseHeightMap ctor [DONE]\n"); fflush(stderr);
 }
 
 void BaseHeightMapRenderObjClass::setTextureLOD(Int lod)
@@ -1759,10 +1768,13 @@ shaders, and materials.*/
 Int BaseHeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIteratork, Bool updateExtraPassTiles)
 {
 
+	fprintf(stderr, "DEBUG: Base::initHeightData [enter]\n"); fflush(stderr);
 	REF_PTR_SET(m_map, pMap);	//update our heightmap pointer in case it changed since last call.
 
+	fprintf(stderr, "DEBUG: Base::initHeightData [shroud->init m_shroud=%p]\n", (void*)m_shroud); fflush(stderr);
 	if (m_shroud)
 		m_shroud->init(m_map,TheGlobalData->m_partitionCellSize,TheGlobalData->m_partitionCellSize);
+	fprintf(stderr, "DEBUG: Base::initHeightData [after shroud]\n"); fflush(stderr);
 #ifdef DO_ROADS
 	if (m_roadBuffer)
 		m_roadBuffer->setMap(m_map);
@@ -1828,9 +1840,13 @@ Int BaseHeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pM
 		//allocate a new one.
 		freeMapResources();	//free old data and ib/vb
 		REF_PTR_SET(m_map,pMap);	//update our heightmap pointer in case it changed since last call.
+		fprintf(stderr, "DEBUG: Base::initHeightData [CloudMapTerrainTexture]\n"); fflush(stderr);
 		m_stageTwoTexture=NEW CloudMapTerrainTextureClass;
+		fprintf(stderr, "DEBUG: Base::initHeightData [LightMapTerrainTexture]\n"); fflush(stderr);
 		m_stageThreeTexture=NEW LightMapTerrainTextureClass(m_macroTextureName);
+		fprintf(stderr, "DEBUG: Base::initHeightData [destAlphaTexture]\n"); fflush(stderr);
 		m_destAlphaTexture=MSGNEW("TextureClass") TextureClass(256,1,WW3D_FORMAT_A8R8G8B8,MIP_LEVELS_1);
+		fprintf(stderr, "DEBUG: Base::initHeightData [initDestAlphaLUT]\n"); fflush(stderr);
 		initDestAlphaLUT();
 #ifdef DO_SCORCH
 		allocateScorchBuffers();

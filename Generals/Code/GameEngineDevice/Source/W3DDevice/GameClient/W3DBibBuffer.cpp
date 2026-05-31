@@ -229,14 +229,19 @@ W3DBibBuffer::W3DBibBuffer()
 	clearAllBibs();
 	m_indexBibSize = INITIAL_BIB_INDEX;
 	m_vertexBibSize = INITIAL_BIB_VERTEX;
+	fprintf(stderr, "DEBUG: W3DBibBuffer ctor [allocateBibBuffers]\n"); fflush(stderr);
 	allocateBibBuffers();
 
+	fprintf(stderr, "DEBUG: W3DBibBuffer ctor [TBBib.tga]\n"); fflush(stderr);
 	m_bibTexture = NEW_REF(TextureClass, ("TBBib.tga"));
+	fprintf(stderr, "DEBUG: W3DBibBuffer ctor [TBRedBib.tga] m_bibTexture=%p\n", (void*)m_bibTexture); fflush(stderr);
 	m_highlightBibTexture = NEW_REF(TextureClass, ("TBRedBib.tga"));
+	fprintf(stderr, "DEBUG: W3DBibBuffer ctor [Get_Filter] m_highlightBibTexture=%p\n", (void*)m_highlightBibTexture); fflush(stderr);
 	m_bibTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 	m_bibTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 	m_highlightBibTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 	m_highlightBibTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
+	fprintf(stderr, "DEBUG: W3DBibBuffer ctor [DONE]\n"); fflush(stderr);
 	m_initialized = true;
 }
 

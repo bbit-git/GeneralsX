@@ -1009,6 +1009,7 @@ Int HeightMapRenderObjClass::updateBlock(Int x0, Int y0, Int x1, Int y1,  WorldH
 			}
 			DX8VertexBufferClass *pVB = getVertexBufferTile(i, j);
 			VERTEX_FORMAT *pData = getVertexBufferBackup(i, j);
+			fprintf(stderr, "DEBUG: updateBlock tile(%d,%d) pVB=%p pData=%p x[%d,%d] y[%d,%d]\n", i, j, (void*)pVB, (void*)pData, xMin, xMax, yMin, yMax); fflush(stderr);
 			updateVB(pVB, pData, xMin, yMin, xMax, yMax, originX, originY, pMap, pLightsIterator);
 		}
 	}
@@ -1242,6 +1243,7 @@ shaders, and materials.*/
 Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator, Bool updateExtraPassTiles)
 {
 	BaseHeightMapRenderObjClass::initHeightData(x, y, pMap, pLightsIterator, updateExtraPassTiles);
+	fprintf(stderr, "DEBUG: HeightMap::initHeightData [after base]\n"); fflush(stderr);
 	Int i,j;
 //	Int	vertsPerRow=x*2-2;
 //	Int	vertsPerColumn=y*2-2;
@@ -1361,7 +1363,9 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 		//go with a preset material for now.
 	}
 
+	fprintf(stderr, "DEBUG: HeightMap::initHeightData [updateBlock x=%d y=%d numVBTiles=%d]\n", x, y, m_numVertexBufferTiles); fflush(stderr);
 	updateBlock(0,0,x-1,y-1,pMap,pLightsIterator);
+	fprintf(stderr, "DEBUG: HeightMap::initHeightData [after updateBlock]\n"); fflush(stderr);
 
 	return 0;
 }

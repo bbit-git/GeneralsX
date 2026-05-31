@@ -1217,10 +1217,13 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 	DEBUG_ASSERTCRASH(m_frame == 0, ("framecounter expected to be 0 here"));
 
 	// before loading the map, load the map.ini file in the same directory.
+	fprintf(stderr, "DEBUG: startNewGame [loadMapINI]\n"); fflush(stderr);
 	loadMapINI( TheGlobalData->m_mapName );
 
 	// load a map
+	fprintf(stderr, "DEBUG: startNewGame [TheTerrainLogic->loadMap]\n"); fflush(stderr);
 	TheTerrainLogic->loadMap( TheGlobalData->m_mapName, false );
+	fprintf(stderr, "DEBUG: startNewGame [after loadMap]\n"); fflush(stderr);
 	// anytime the world's size changes, must reset the partition mgr
 	//ThePartitionManager->init();
 

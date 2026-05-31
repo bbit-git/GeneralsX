@@ -108,6 +108,9 @@ int TerrainTextureClass::update(WorldHeightMap *htMap)
 	}
 
 	DX8_ErrorCode(surface_level->LockRect(&locked_rect, nullptr, 0));
+	fprintf(stderr, "DEBUG: TerrainTex::update W=%u H=%u fmt=%u pitch=%d pBits=%p numTiles=%d numTexClasses=%d\n",
+		surface_desc.Width, surface_desc.Height, surface_desc.Format, locked_rect.Pitch, locked_rect.pBits,
+		htMap?htMap->m_numBitmapTiles:-1, htMap?htMap->m_numTextureClasses:-1); fflush(stderr);
 
 	Int tilePixelExtent = TILE_PIXEL_EXTENT;
 	Int tilesPerRow = surface_desc.Width/(2*TILE_PIXEL_EXTENT+TILE_OFFSET);

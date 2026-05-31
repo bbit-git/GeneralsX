@@ -206,8 +206,10 @@ void W3DTerrainVisual::init()
 {
 
 	// extend
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::init [TerrainVisual::init]\n"); fflush(stderr);
 	TerrainVisual::init();
 	// create a new render object for W3D
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::init [HeightMapRenderObj]\n"); fflush(stderr);
 	m_terrainRenderObject = NEW_REF( HeightMapRenderObjClass, () );
 	m_terrainRenderObject->Set_Collision_Type( PICK_TYPE_TERRAIN );
 	TheTerrainRenderObject = m_terrainRenderObject;
@@ -215,21 +217,26 @@ void W3DTerrainVisual::init()
 	if (!TheGlobalData->m_headless)
 	{
 		// initialize track drawing system
+		fprintf(stderr, "DEBUG: W3DTerrainVisual::init [TerrainTracks]\n"); fflush(stderr);
 		TheTerrainTracksRenderObjClassSystem = NEW TerrainTracksRenderObjClassSystem;
 		TheTerrainTracksRenderObjClassSystem->init(W3DDisplay::m_3DScene);
 
 		// initialize object shadow drawing system
+		fprintf(stderr, "DEBUG: W3DTerrainVisual::init [ShadowManager]\n"); fflush(stderr);
 		TheW3DShadowManager = NEW W3DShadowManager;
  		TheW3DShadowManager->init();
 
 		// create a water plane render object
+		fprintf(stderr, "DEBUG: W3DTerrainVisual::init [WaterRenderObj]\n"); fflush(stderr);
 		TheWaterRenderObj=m_waterRenderObject = NEW_REF( WaterRenderObjClass, () );
 		m_waterRenderObject->init(TheGlobalData->m_waterPositionZ, TheGlobalData->m_waterExtentX, TheGlobalData->m_waterExtentY, W3DDisplay::m_3DScene, (WaterRenderObjClass::WaterType)TheGlobalData->m_waterType);	//create a water plane that's 128x128 units
 		m_waterRenderObject->Set_Position(Vector3(TheGlobalData->m_waterPositionX,TheGlobalData->m_waterPositionY,TheGlobalData->m_waterPositionZ));	//place water in world
 
 		// create smudge rendering system.
+		fprintf(stderr, "DEBUG: W3DTerrainVisual::init [SmudgeManager]\n"); fflush(stderr);
 		TheSmudgeManager = NEW(W3DSmudgeManager);
 		TheSmudgeManager->init();
+		fprintf(stderr, "DEBUG: W3DTerrainVisual::init [render systems done]\n"); fflush(stderr);
 
 #ifdef DO_UNIT_TIMINGS
 #pragma MESSAGE("********************* WARNING- Doing UNIT TIMINGS. ")
@@ -556,7 +563,9 @@ Bool W3DTerrainVisual::load( AsciiString filename )
 
   // allocate new height map data to read from file
   REF_PTR_RELEASE( m_logicHeightMap );
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::load [NEW WorldHeightMap]\n"); fflush(stderr);
 	m_logicHeightMap = NEW WorldHeightMap(pStrm);
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::load [after WorldHeightMap]\n"); fflush(stderr);
 
 #ifdef DO_SEISMIC_SIMULATIONS
 
@@ -611,10 +620,12 @@ Bool W3DTerrainVisual::load( AsciiString filename )
 																				 m_clientHeightMap,
 																				 it);
 #else
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::load [initHeightData]\n"); fflush(stderr);
 	m_terrainRenderObject->initHeightData( m_logicHeightMap->getDrawWidth(),
 																				 m_logicHeightMap->getDrawHeight(),
 																				 m_logicHeightMap,
 																				 it);
+	fprintf(stderr, "DEBUG: W3DTerrainVisual::load [after initHeightData]\n"); fflush(stderr);
 #endif
 
 

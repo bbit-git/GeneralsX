@@ -1065,7 +1065,9 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 	Set_Sort_Level(2);	//force water to be drawn after all other non translucent objects in scene.
 	Set_Force_Visible(TRUE);	//water is always visible since it's a composite object made of multiple planes all over the map.
 
+	fprintf(stderr, "DEBUG: Water::init [ReAcquireResources]\n"); fflush(stderr);
 	ReAcquireResources();
+	fprintf(stderr, "DEBUG: Water::init [after ReAcquireResources]\n"); fflush(stderr);
 #if 0	//MD does not support the old bump-mapped water at all so no point loading textures. -MW 8-11-03
 	if (type == WATER_TYPE_2_PVSHADER || (W3DShaderManager::getChipset() >= DC_GENERIC_PIXEL_SHADER_1_1))
 	{	//geforce3 specific water requires some extra D3D assets
@@ -1108,13 +1110,16 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 	m_shaderClass.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);	//water should be visible from both sides
 
 	//Assets used for all types of water
+	fprintf(stderr, "DEBUG: Water::init [alphaClippingTexture]\n"); fflush(stderr);
 	m_alphaClippingTexture=WW3DAssetManager::Get_Instance()->Get_Texture(SKYBODY_TEXTURE);
 
 #ifdef CLIP_GEOMETRY_TO_PLANE
 	m_alphaClippingTexture=WW3DAssetManager::Get_Instance()->Get_Texture("alphaclip.tga");
 #endif
 
+	fprintf(stderr, "DEBUG: Water::init [skyBox Create_Render_Obj]\n"); fflush(stderr);
 	m_skyBox = ((W3DAssetManager*)W3DAssetManager::Get_Instance())->Create_Render_Obj( "new_skybox", TheGlobalData->m_skyBoxScale, 0);
+	fprintf(stderr, "DEBUG: Water::init [skyBox=%p]\n", (void*)m_skyBox); fflush(stderr);
 
 	//Enable clamping on all textures used by the skybox (to reduce corner seams).
 	if (m_skyBox && m_skyBox->Class_ID() == RenderObjClass::CLASSID_MESH)
@@ -1137,8 +1142,10 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 	m_riverTexture=WW3DAssetManager::Get_Instance()->Get_Texture(TheWaterTransparency->m_standingWaterTexture.str());
 
 	//For some reason setting a null texture does not result in 0xffffffff for pixel shaders so using explicit "white" texture.
+	fprintf(stderr, "DEBUG: Water::init [whiteTexture]\n"); fflush(stderr);
 	m_whiteTexture=MSGNEW("TextureClass") TextureClass(1,1,WW3D_FORMAT_A4R4G4B4,MIP_LEVELS_1);
 	SurfaceClass *surface=m_whiteTexture->Get_Surface_Level();
+	fprintf(stderr, "DEBUG: Water::init [whiteTexture surface=%p]\n", (void*)surface); fflush(stderr);
 	int pitch;
 	void *pBits = surface->Lock(&pitch);
 	const unsigned int bytesPerPixel = surface->Get_Bytes_Per_Pixel();
@@ -1146,6 +1153,7 @@ Int WaterRenderObjClass::init(Real waterLevel, Real dx, Real dy, SceneClass *par
 	surface->Unlock();
 	REF_PTR_RELEASE(surface);
 
+	fprintf(stderr, "DEBUG: Water::init [noise/river textures]\n"); fflush(stderr);
 	m_waterNoiseTexture=WW3DAssetManager::Get_Instance()->Get_Texture("Noise0000.tga");
 	m_riverAlphaEdge=WW3DAssetManager::Get_Instance()->Get_Texture("TWAlphaEdge.tga");
 	m_waterSparklesTexture=WW3DAssetManager::Get_Instance()->Get_Texture("WaterSurfaceBubbles.tga");

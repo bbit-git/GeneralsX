@@ -320,12 +320,14 @@ void GameClient::init()
  		TheDisplay->setName("TheDisplay");
 	}
 
+	fprintf(stderr, "DEBUG: GameClient::init [HeaderTemplateManager]\n"); fflush(stderr);
 	TheHeaderTemplateManager = MSGNEW("GameClientSubsystem") HeaderTemplateManager;
 	if(TheHeaderTemplateManager){
 		TheHeaderTemplateManager->init();
 	}
 
 	// create the window manager
+	fprintf(stderr, "DEBUG: GameClient::init [WindowManager]\n"); fflush(stderr);
 	TheWindowManager = TheGlobalData->m_headless ? NEW GameWindowManagerDummy : createWindowManager();
 	if( TheWindowManager )
 	{
@@ -337,6 +339,7 @@ void GameClient::init()
 	}
 
 	// create the IME manager
+	fprintf(stderr, "DEBUG: GameClient::init [IMEManager]\n"); fflush(stderr);
 	TheIMEManager = CreateIMEManagerInterface();
 	if ( TheIMEManager )
 	{
@@ -345,6 +348,7 @@ void GameClient::init()
 	}
 
 	// create the shell
+	fprintf(stderr, "DEBUG: GameClient::init [Shell]\n"); fflush(stderr);
 	TheShell = MSGNEW("GameClientSubsystem") Shell;
 	if( TheShell ) {
 		TheShell->init();
@@ -352,12 +356,14 @@ void GameClient::init()
 	}
 
 	// instantiate the in-game user interface
+	fprintf(stderr, "DEBUG: GameClient::init [InGameUI]\n"); fflush(stderr);
 	TheInGameUI = createInGameUI();
 	if( TheInGameUI ) {
 		TheInGameUI->init();
  		TheInGameUI->setName("TheInGameUI");
 	}
 
+	fprintf(stderr, "DEBUG: GameClient::init [HotKeyManager]\n"); fflush(stderr);
 	TheHotKeyManager = MSGNEW("GameClientSubsystem") HotKeyManager;
 	if( TheHotKeyManager ) {
 		TheHotKeyManager->init();
@@ -365,6 +371,7 @@ void GameClient::init()
 	}
 
 	// instantiate the terrain visual display
+	fprintf(stderr, "DEBUG: GameClient::init [TerrainVisual]\n"); fflush(stderr);
 	TheTerrainVisual = createTerrainVisual();
 	if( TheTerrainVisual ) {
 		TheTerrainVisual->init();
@@ -372,6 +379,7 @@ void GameClient::init()
 	}
 
 	// allocate the ray effects manager
+	fprintf(stderr, "DEBUG: GameClient::init [RayEffects]\n"); fflush(stderr);
 	TheRayEffects = MSGNEW("GameClientSubsystem") RayEffectSystem;
 	if( TheRayEffects )	{
 		TheRayEffects->init();
@@ -379,6 +387,7 @@ void GameClient::init()
 	}
 
 	// set the limits of the mouse now that we've created the display and such
+	fprintf(stderr, "DEBUG: GameClient::init [Mouse]\n"); fflush(stderr);
 	if( TheMouse )
 	{
 		// finish initializing the mouse.
@@ -390,6 +399,7 @@ void GameClient::init()
 	}
 
 	// create the video player
+	fprintf(stderr, "DEBUG: GameClient::init [VideoPlayer]\n"); fflush(stderr);
 	TheVideoPlayer = createVideoPlayer();
 	if ( TheVideoPlayer )
 	{
@@ -398,6 +408,7 @@ void GameClient::init()
 	}
 
 	// create the language filter.
+	fprintf(stderr, "DEBUG: GameClient::init [LanguageFilter]\n"); fflush(stderr);
 	TheLanguageFilter = createLanguageFilter();
 	if (TheLanguageFilter)
 	{
@@ -405,14 +416,18 @@ void GameClient::init()
  		TheLanguageFilter->setName("TheLanguageFilter");
 	}
 
+	fprintf(stderr, "DEBUG: GameClient::init [CampaignManager]\n"); fflush(stderr);
 	TheCampaignManager = MSGNEW("GameClientSubsystem") CampaignManager;
 	TheCampaignManager->init();
 
+	fprintf(stderr, "DEBUG: GameClient::init [Eva]\n"); fflush(stderr);
 	TheEva = MSGNEW("GameClientSubsystem") Eva;
 	TheEva->init();
  	TheEva->setName("TheEva");
 
+	fprintf(stderr, "DEBUG: GameClient::init [postProcessLoad]\n"); fflush(stderr);
 	TheDisplayStringManager->postProcessLoad();
+	fprintf(stderr, "DEBUG: GameClient::init [DONE]\n"); fflush(stderr);
 
 #ifdef PERF_TIMERS
 	TheGraphDraw = new GraphDraw;
