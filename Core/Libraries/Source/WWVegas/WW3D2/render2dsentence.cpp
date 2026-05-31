@@ -41,8 +41,10 @@
 #include "wwmemlog.h"
 #include "dx8wrapper.h"
 
-#ifdef __ANDROID__
-#include <unistd.h>   // access() — direct /system/fonts lookup (no fontconfig on Android)
+#if defined(SAGE_USE_FREETYPE) && !defined(_WIN32)
+#include <unistd.h>   // access(), readlink() — bundled / system font discovery
+#include <cstdio>     // fprintf — report which font file won
+#include <cstring>    // strcmp / strrchr
 #endif
 
 
@@ -1651,6 +1653,98 @@ FontCharsClass::Update_Current_Buffer (int char_width)
 
 ////////////////////////////////////////////////////////////////////////////////////
 //
+//	Locate_Font_Bundled
+//
+// Resolve a requested font family to one of the ORIGINAL game fonts the user has
+// dropped into a "fonts/" directory, reproducing the authentic Windows Generals look
+// instead of whatever fontconfig substitutes (Liberation Sans on Linux). Runs before
+// the Android / fontconfig paths; returns nullptr when no bundled font is present so
+// behaviour is unchanged unless the files exist. Arial / Times New Roman / Courier New
+// / Arial Unicode MS are proprietary and are never shipped in the repo — the user
+// supplies them. Filenames mirror C:\Windows\Fonts so they can be copied straight over.
+////////////////////////////////////////////////////////////////////////////////////
+const char *
+FontCharsClass::Locate_Font_Bundled (const char *font_name, bool is_bold)
+{
+	//
+	//	Build the search-directory list (first hit wins):
+	//	  1. GENERALS_FONTS_PATH override (matches the CNC_GENERALS_PATH env convention)
+	//	  2. <dir-of-executable>/fonts  (via /proc/self/exe on Linux)
+	//	  3. ./fonts                    (current working directory)
+	//
+	StringClass dirs[3];
+	int dir_count = 0;
+
+	const char *env_dir = ::getenv( "GENERALS_FONTS_PATH" );
+	if ( env_dir != nullptr && env_dir[0] != '\0' ) {
+		dirs[dir_count++] = env_dir;
+	}
+
+	char exe_path[1024];
+	ssize_t len = ::readlink( "/proc/self/exe", exe_path, sizeof(exe_path) - 1 );
+	if ( len > 0 ) {
+		exe_path[len] = '\0';
+		char *slash = ::strrchr( exe_path, '/' );
+		if ( slash != nullptr ) {
+			*slash = '\0';
+			StringClass exe_fonts;
+			exe_fonts.Format( "%s/fonts", exe_path );
+			dirs[dir_count++] = exe_fonts;
+		}
+	}
+
+	dirs[dir_count++] = "fonts";
+
+	//
+	//	Map the requested family (+ weight) to candidate filenames. Lists are ordered
+	//	like Locate_Font_Android so we tolerate the casings people copy out of Windows.
+	//
+	StringClass names[4];
+	int name_count = 0;
+
+	if ( strcmp( font_name, "Arial" ) == 0 ) {
+		if ( is_bold ) { names[name_count++] = "arialbd.ttf"; names[name_count++] = "Arial Bold.ttf"; }
+		names[name_count++] = "arial.ttf";
+		names[name_count++] = "Arial.ttf";
+	} else if ( strcmp( font_name, "Times New Roman" ) == 0 ) {
+		if ( is_bold ) { names[name_count++] = "timesbd.ttf"; }
+		names[name_count++] = "times.ttf";
+	} else if ( strcmp( font_name, "Courier" ) == 0 || strcmp( font_name, "Courier New" ) == 0 ) {
+		if ( is_bold ) { names[name_count++] = "courbd.ttf"; }
+		names[name_count++] = "cour.ttf";
+	} else if ( strcmp( font_name, "Arial Unicode MS" ) == 0 ) {
+		names[name_count++] = "ARIALUNI.TTF";
+		names[name_count++] = "arialuni.ttf";
+	} else {
+		//
+		//	Generic fallback: "<Family> Bold.ttf" / "<Family>.ttf"
+		//
+		if ( is_bold ) { names[name_count].Format( "%s Bold.ttf", font_name ); ++name_count; }
+		names[name_count].Format( "%s.ttf", font_name ); ++name_count;
+	}
+
+	//
+	//	Probe every directory x candidate until one is readable.
+	//
+	for ( int d = 0; d < dir_count; ++d ) {
+		for ( int n = 0; n < name_count; ++n ) {
+			StringClass candidate;
+			candidate.Format( "%s/%s", dirs[d].Peek_Buffer(), names[n].Peek_Buffer() );
+			if ( ::access( candidate.Peek_Buffer(), R_OK ) == 0 ) {
+				FreetypeFontPath = candidate;
+				::fprintf( stderr, "[Generals] font '%s'%s -> bundled %s\n",
+					font_name, is_bold ? " (bold)" : "", FreetypeFontPath.Peek_Buffer() );
+				return FreetypeFontPath;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////
+//
 //	Locate_Font_FontConfig
 //
 // TheSuperHackers @feature FreeType port 10/02/2026 Locate system font using Fontconfig
@@ -1791,8 +1885,11 @@ FontCharsClass::Create_Freetype_Font (const char *font_name)
 	//	resolve directly against /system/fonts; everywhere else use fontconfig.
 	//
 	const char *font_path = nullptr;
+	font_path = Locate_Font_Bundled( font_name, IsBold );	// original game fonts win when present
 #ifdef __ANDROID__
-	font_path = Locate_Font_Android( IsBold );
+	if ( font_path == nullptr ) {
+		font_path = Locate_Font_Android( IsBold );
+	}
 #endif
 	if ( font_path == nullptr ) {
 		font_path = Locate_Font_FontConfig( font_name );

@@ -118,6 +118,7 @@ private:
 	bool							Create_Freetype_Font( const char *font_name );
 	void							Free_Freetype_Font( void );
 	const FontCharsClassCharDataStruct *	Store_Freetype_Char( WCHAR ch );
+	const char *					Locate_Font_Bundled( const char *font_name, bool is_bold );
 	const char *					Locate_Font_FontConfig( const char *font_name );
 #endif
 	
