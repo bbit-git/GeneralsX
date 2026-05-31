@@ -679,6 +679,11 @@ static void saveOptions()
 			multiplier = zpos / 100.0f;
 		}
 		TheWritableGlobalData->m_maxCameraHeightMultiplier = enabled ? multiplier : 1.0f;
+
+		// Re-apply the tactical view's height limits so the new multiplier takes effect
+		// immediately (the clamp is otherwise only recomputed on game start / resolution change).
+		if (TheTacticalView)
+			TheTacticalView->setCameraHeightAboveGroundLimitsToDefault();
 	}
 
 	//-------------------------------------------------------------------------------------------------

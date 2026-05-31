@@ -2247,7 +2247,10 @@ void W3DView::setCameraHeightAboveGroundLimitsToDefault(Real heightScale)
 		aspectRatioScale = fabs(( 1 - ( baseAspectRatio - currentAspectRatio) ));
 	}
 
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight * aspectRatioScale * heightScale;
+	// local: scale by the user zoom-out multiplier (1.0 unless overridden in Options). This is
+	// the path that resets the tactical-view limits on game start / resolution change, so the
+	// multiplier must be applied here too or it gets clobbered with the un-scaled value.
+	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight * aspectRatioScale * heightScale * TheGlobalData->m_maxCameraHeightMultiplier;
 	m_minHeightAboveGround = TheGlobalData->m_minCameraHeight * aspectRatioScale;
 
 	if (m_minHeightAboveGround > m_maxHeightAboveGround)
