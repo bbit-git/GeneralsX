@@ -66,6 +66,7 @@ private:
     bool     compressed_ = false;
     bool     needsSwizzle_ = false;
     bool     decompressOnUpload_ = false;  // DXT but no S3TC ext
+    bool     expand1555_ = false;          // D3D A1R5G5B5 -> RGBA8 on upload
     std::vector<Level> levelData_;
 };
 

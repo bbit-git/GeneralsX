@@ -154,13 +154,17 @@ bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
     compressed_   = fmt.compressed;
     needsSwizzle_ = fmt.needsBGRASwizzle;
     decompressOnUpload_ = compressed_ && !s3tcSupported;
+    // GLES3 has no packed type matching D3D A1R5G5B5 (its 1-bit alpha is at the
+    // word's MSB, GL's UNSIGNED_SHORT_5_5_5_1 puts it at the LSB), so the bit
+    // fields don't line up and a channel swizzle can't fix it. Expand to RGBA8.
+    expand1555_ = (d3dFormat == 25 /*D3DFMT_A1R5G5B5*/);
 
     glGenTextures(1, &glTexture_);
     glBindTexture(GL_TEXTURE_2D, glTexture_);
 
     // Allocate immutable-ish storage for the uncompressed path; compressed and
     // CPU-decompressed paths upload per level in UnlockRect.
-    if (!compressed_ && fmt.supported) {
+    if (!compressed_ && !expand1555_ && fmt.supported) {
         glTexStorage2D(GL_TEXTURE_2D, static_cast<GLsizei>(levels_), fmt.internalFormat,
                        static_cast<GLsizei>(w), static_cast<GLsizei>(h));
         if (needsSwizzle_) {
@@ -227,6 +231,23 @@ void GLTexture::UnlockRect(uint32_t level) {
         // No S3TC on this GLES device: CPU-decode the DXT block data to RGBA8.
         std::vector<uint8_t> rgba;
         DecodeDXT(L.staging.data(), L.staging.size(), L.w, L.h, d3dFormat_, rgba);
+        glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), GL_RGBA8,
+                     static_cast<GLsizei>(L.w), static_cast<GLsizei>(L.h), 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    } else if (expand1555_) {
+        // D3D A1R5G5B5 [A:1][R:5][G:5][B:5] (MSB->LSB) -> RGBA8 (5-bit expanded to
+        // 8 by bit-replication; alpha is the single top bit -> 0 or 255).
+        const size_t n = static_cast<size_t>(L.w) * L.h;
+        std::vector<uint8_t> rgba(n * 4);
+        const uint16_t* src = reinterpret_cast<const uint16_t*>(L.staging.data());
+        for (size_t i = 0; i < n; ++i) {
+            const uint16_t p = src[i];
+            uint8_t r = (p >> 10) & 0x1F, g = (p >> 5) & 0x1F, b = p & 0x1F;
+            rgba[i*4+0] = static_cast<uint8_t>((r << 3) | (r >> 2));
+            rgba[i*4+1] = static_cast<uint8_t>((g << 3) | (g >> 2));
+            rgba[i*4+2] = static_cast<uint8_t>((b << 3) | (b >> 2));
+            rgba[i*4+3] = (p & 0x8000) ? 255 : 0;
+        }
         glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), GL_RGBA8,
                      static_cast<GLsizei>(L.w), static_cast<GLsizei>(L.h), 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());

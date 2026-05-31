@@ -183,13 +183,12 @@ GLTexFormat MapTextureFormat(uint32_t fmt) {
             // GL 5_6_5 packing matches D3D R5G6B5 exactly; no swizzle.
             t.internalFormat = GL_RGB565; t.format = GL_RGB; t.type = GL_UNSIGNED_SHORT_5_6_5; break;
         case D3DFMT_A1R5G5B5:
-            // NOTE: GL 5_5_5_1 puts the 1-bit alpha at the LSB while D3D A1R5G5B5 puts
-            // it at the MSB, so the bit fields don't line up and a channel swizzle can't
-            // fully correct it (would need CPU expansion to RGBA8). Left as the legacy
-            // R<->B approximation; revisit if a 1555 texture shows wrong colors.
+            // GL 5_5_5_1 puts the 1-bit alpha at the LSB while D3D A1R5G5B5 puts it at
+            // the MSB, so the bit fields don't line up and a channel swizzle can't fix
+            // it. The resources layer CPU-expands this format to RGBA8 (expand1555_);
+            // the descriptor here only sets the 2-byte source pitch (type=5_5_5_1).
             t.internalFormat = GL_RGB5_A1; t.format = GL_RGBA; t.type = GL_UNSIGNED_SHORT_5_5_5_1;
-            t.needsBGRASwizzle = true;
-            t.swizzle[0] = GL_BLUE; t.swizzle[2] = GL_RED; break;
+            break;
         case D3DFMT_A4R4G4B4:
             // GL 4_4_4_4 reads the word as R4 G4 B4 A4 (MSB->LSB); D3D A4R4G4B4 is
             // A4 R4 G4 B4. So GL.{R,G,B,A} = D3D.{A,R,G,B}: rotate to recover RGBA.
