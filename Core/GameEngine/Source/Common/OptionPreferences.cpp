@@ -203,6 +203,20 @@ Bool OptionPreferences::getAlternateMouseModeEnabled()
 	return FALSE;
 }
 
+// local: RMB grab/drag map panning. When enabled, holding the right mouse button
+// drags the map 1:1 with the cursor instead of the default joystick-style push scroll.
+Bool OptionPreferences::getDragScrollEnabled()
+{
+	OptionPreferences::const_iterator it = find("UseDragScroll");
+	if (it == end())
+		return TheGlobalData->m_dragScrollEnabled;
+
+	if (stricmp(it->second.str(), "yes") == 0) {
+		return TRUE;
+	}
+	return FALSE;
+}
+
 Bool OptionPreferences::getRetaliationModeEnabled()
 {
 	OptionPreferences::const_iterator it = find("Retaliation");

@@ -99,6 +99,8 @@ static GameWindow *   comboBoxDetail        = nullptr;
 
 static NameKeyType		checkAlternateMouseID	= NAMEKEY_INVALID;
 static GameWindow *		checkAlternateMouse		= nullptr;
+static NameKeyType		checkDragScrollID	= NAMEKEY_INVALID;	// local: RMB grab/drag panning toggle
+static GameWindow *		checkDragScroll		= nullptr;
 
 static NameKeyType		sliderScrollSpeedID	= NAMEKEY_INVALID;
 static GameWindow *		sliderScrollSpeed		= nullptr;
@@ -578,6 +580,9 @@ static void saveOptions()
 	// mouse mode
 	TheWritableGlobalData->m_useAlternateMouse = GadgetCheckBoxIsChecked(checkAlternateMouse);
 	(*pref)["UseAlternateMouse"] = TheWritableGlobalData->m_useAlternateMouse ? "yes" : "no";
+	if (checkDragScroll)
+		TheWritableGlobalData->m_dragScrollEnabled = GadgetCheckBoxIsChecked(checkDragScroll);
+	(*pref)["UseDragScroll"] = TheWritableGlobalData->m_dragScrollEnabled ? "yes" : "no";
 
 	// TheSuperHackers @todo Add combo box ?
 	{
@@ -933,7 +938,9 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	comboBoxOnlineIPID		 = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:ComboBoxOnlineIP" );
 	comboBoxOnlineIP			 = TheWindowManager->winGetWindowFromId( nullptr,  comboBoxOnlineIPID);
 	checkAlternateMouseID  = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:CheckAlternateMouse" );
+	checkDragScrollID  = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:CheckDragScroll" );
 	checkAlternateMouse	   = TheWindowManager->winGetWindowFromId( nullptr, checkAlternateMouseID);
+	checkDragScroll	   = TheWindowManager->winGetWindowFromId( nullptr, checkDragScrollID);
 	sliderScrollSpeedID	   = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:SliderScrollSpeed" );
 	sliderScrollSpeed		   = TheWindowManager->winGetWindowFromId( nullptr,  sliderScrollSpeedID);
 	comboBoxAntiAliasingID = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:ComboBoxAntiAliasing" );
@@ -1325,6 +1332,8 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 
  	// set the mouse mode
  	GadgetCheckBoxSetChecked(checkAlternateMouse, TheGlobalData->m_useAlternateMouse);
+	if (checkDragScroll)
+		GadgetCheckBoxSetChecked(checkDragScroll, TheGlobalData->m_dragScrollEnabled);
 
 	// set scroll speed slider
 	// TheSuperHackers @tweak xezon 11/07/2025 No longer sets the slider position if the user setting

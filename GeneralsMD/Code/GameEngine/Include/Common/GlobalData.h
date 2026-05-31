@@ -143,6 +143,7 @@ public:
 	Bool m_enableStaticLOD;
 	Int m_terrainLODTargetTimeMS;
 	Bool m_useAlternateMouse;
+	Bool m_dragScrollEnabled;			///< local: RMB grab/drag map panning (1:1) instead of joystick push scroll
 	Bool m_clientRetaliationModeEnabled;
 	Bool m_doubleClickAttackMove;
 	Bool m_rightMouseAlwaysScrolls;

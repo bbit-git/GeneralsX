@@ -669,6 +669,7 @@ GlobalData::GlobalData()
 	m_terrainLODTargetTimeMS = 0;
 	m_enableDynamicLOD = TRUE;
 	m_enableStaticLOD = TRUE;
+	m_dragScrollEnabled = FALSE;
 	m_rightMouseAlwaysScrolls = FALSE;
 	m_useWaterPlane = FALSE;
 	m_useCloudPlane = FALSE;
@@ -1220,6 +1221,7 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	TheWritableGlobalData->m_maxCameraHeightMultiplier =
 		optionPref.getMaxCameraZoomOverrideEnabled() ? optionPref.getMaxCameraZoomMultiplier() : 1.0f;
 	TheWritableGlobalData->m_useAlternateMouse = optionPref.getAlternateMouseModeEnabled();
+	TheWritableGlobalData->m_dragScrollEnabled = optionPref.getDragScrollEnabled();
 	TheWritableGlobalData->m_clientRetaliationModeEnabled = optionPref.getRetaliationModeEnabled();
 	TheWritableGlobalData->m_doubleClickAttackMove = optionPref.getDoubleClickAttackMoveEnabled();
 	TheWritableGlobalData->m_keyboardScrollFactor = optionPref.getScrollFactor();

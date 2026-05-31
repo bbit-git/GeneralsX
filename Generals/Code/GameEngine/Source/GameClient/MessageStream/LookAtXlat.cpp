@@ -146,6 +146,7 @@ LookAtTranslator::LookAtTranslator() :
 	m_anchor.x = m_anchor.y = 0;
 	m_currentPos.x = m_currentPos.y = 0;
 	m_originalAnchor.x = m_originalAnchor.y = 0;
+	m_dragLastPos.x = m_dragLastPos.y = 0;	// local: RMB grab/drag reference, re-seeded on RMB down
 
 	OptionPreferences prefs;
 	m_screenEdgeScrollMode = prefs.getScreenEdgeScrollMode();
@@ -260,6 +261,8 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 
 			m_anchor = msg->getArgument( 0 )->pixel;
 			m_currentPos = msg->getArgument( 0 )->pixel;
+
+			m_dragLastPos = msg->getArgument( 0 )->pixel; // local: seed RMB grab/drag reference
 
 			// disable mouse scrolling in alternate mouse mode, per Harvard 7/15/03
 			if (!TheGlobalData->m_useAlternateMouse && !TheInGameUI->isSelecting() && !m_isScrolling)
@@ -458,6 +461,17 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				{
 				case SCROLL_RMB:
 					{
+						if (TheGlobalData->m_dragScrollEnabled)
+						{
+							// local: grab/drag panning. The map tracks the cursor 1:1 - scroll the view
+							// opposite to the per-frame mouse delta so the grabbed point stays pinned under
+							// the cursor. This is positional, so no fps ratio or scroll-factor scaling applies.
+							offset.x = (Real)(m_dragLastPos.x - m_currentPos.x);
+							offset.y = (Real)(m_dragLastPos.y - m_currentPos.y);
+							m_dragLastPos = m_currentPos;
+							break;
+						}
+
 						if (TheInGameUI->shouldMoveRMBScrollAnchor())
 						{
 							Int maxX = TheDisplay->getWidth()/2;

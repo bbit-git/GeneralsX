@@ -69,6 +69,7 @@ public:
 	void setOnlineIPAddress(UnsignedInt IP);
 	Bool getArchiveReplaysEnabled() const;
 	Bool getAlternateMouseModeEnabled();
+	Bool getDragScrollEnabled();		// local: RMB grab/drag map panning (1:1) instead of joystick push scroll
 	Bool getRetaliationModeEnabled();
 	Bool getDoubleClickAttackMoveEnabled();
 	Real getScrollFactor();
