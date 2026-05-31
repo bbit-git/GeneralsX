@@ -940,6 +940,13 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	comboBoxAntiAliasing   = TheWindowManager->winGetWindowFromId( nullptr, comboBoxAntiAliasingID );
 	comboBoxResolutionID   = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:ComboBoxResolution" );
 	comboBoxResolution     = TheWindowManager->winGetWindowFromId( nullptr, comboBoxResolutionID );
+#if defined(__ANDROID__)
+	// GeneralsX @bugfix Android: the render resolution is locked to the device's native
+	// drawable (see W3DDisplay::init), so there is nothing to choose here. Disable the
+	// selector; the Set_Current_Options() apply path also gates on winGetEnabled(), so
+	// this prevents any resolution write as well.
+	if (comboBoxResolution) comboBoxResolution->winEnable(FALSE);
+#endif
 	comboBoxDetailID			 = TheNameKeyGenerator->nameToKey( "OptionsMenu.wnd:ComboBoxDetail" );
 	comboBoxDetail		   = TheWindowManager->winGetWindowFromId( nullptr, comboBoxDetailID );
 

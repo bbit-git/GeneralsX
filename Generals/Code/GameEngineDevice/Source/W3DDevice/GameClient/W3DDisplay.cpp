@@ -895,6 +895,29 @@ void W3DDisplay::init()
 		WW3D::Set_Thumbnail_Enabled(false);
 		WW3D::Set_Screen_UV_Bias( TRUE );  ///< this makes text look good :)
 
+#if defined(__ANDROID__) && defined(SAGE_USE_SDL3)
+		// GeneralsX @bugfix Android: lock the render resolution to the device's native
+		// drawable. The SDL window is created fullscreen at the panel resolution, but the
+		// engine would otherwise render at the 800x600 default. Because d3d8gles3 has no
+		// offscreen pillarbox target (Pillarbox_Setup bails on Android), that small game
+		// viewport lands in a sub-rectangle of the full GLES backbuffer — "everything
+		// renders from inside" the corner. Forcing the resolution to the drawable makes
+		// the scene/UI viewport fill the panel. Phone resolution is fixed; the Options
+		// menu resolution selector is disabled (see OptionsMenu.cpp).
+		{
+			int physW = 0, physH = 0;
+			float density = 1.0f;
+			if (SDL3_GetWindowSizeInPixels(physW, physH, density) && physW > 0 && physH > 0) {
+				fprintf(stderr, "INFO: Android: locking render resolution to native drawable "
+					"%dx%d (was %dx%d)\n", physW, physH,
+					TheGlobalData->m_xResolution, TheGlobalData->m_yResolution);
+				TheWritableGlobalData->m_xResolution = physW;
+				TheWritableGlobalData->m_yResolution = physH;
+				TheWritableGlobalData->m_windowed = FALSE;
+			}
+		}
+#endif
+
 		setWindowed( TheGlobalData->m_windowed );
 
 		// create a 2D renderer helper
