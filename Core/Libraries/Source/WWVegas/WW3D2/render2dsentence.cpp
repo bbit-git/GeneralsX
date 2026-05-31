@@ -41,6 +41,10 @@
 #include "wwmemlog.h"
 #include "dx8wrapper.h"
 
+#ifdef __ANDROID__
+#include <unistd.h>   // access() — direct /system/fonts lookup (no fontconfig on Android)
+#endif
+
 
 ////////////////////////////////////////////////////////////////////////////////////
 //	Local constants
@@ -1704,6 +1708,52 @@ FontCharsClass::Locate_Font_FontConfig (const char *font_name)
 }
 
 
+#ifdef __ANDROID__
+////////////////////////////////////////////////////////////////////////////////////
+//
+//	Locate_Font_Android
+//
+// Android ships no fontconfig configuration (/etc/fonts is absent), so
+// FcInitLoadConfigAndFonts() fails ("Cannot load default config file") and the
+// fontconfig path resolves nothing — leaving every UI label blank. Resolve the
+// requested family directly to a sans-serif TTF in /system/fonts instead. The
+// candidate lists are ordered by ubiquity so this also works on real phones
+// where the exact font set varies by OEM / OS version.
+////////////////////////////////////////////////////////////////////////////////////
+static const char *
+Locate_Font_Android (bool is_bold)
+{
+	static const char *const REGULAR[] = {
+		"/system/fonts/Roboto-Regular.ttf",
+		"/system/fonts/DroidSans.ttf",
+		"/system/fonts/NotoSans-Regular.ttf",
+		"/system/fonts/RobotoStatic-Regular.ttf",
+		nullptr
+	};
+	static const char *const BOLD[] = {
+		"/system/fonts/Roboto-Bold.ttf",
+		"/system/fonts/DroidSans-Bold.ttf",
+		"/system/fonts/NotoSans-Bold.ttf",
+		nullptr
+	};
+
+	if ( is_bold ) {
+		for ( const char *const *p = BOLD; *p != nullptr; ++p ) {
+			if ( ::access( *p, R_OK ) == 0 ) {
+				return *p;
+			}
+		}
+	}
+	for ( const char *const *p = REGULAR; *p != nullptr; ++p ) {
+		if ( ::access( *p, R_OK ) == 0 ) {
+			return *p;
+		}
+	}
+	return nullptr;
+}
+#endif // __ANDROID__
+
+
 ////////////////////////////////////////////////////////////////////////////////////
 //
 //	Create_Freetype_Font
@@ -1737,9 +1787,16 @@ FontCharsClass::Create_Freetype_Font (const char *font_name)
 	int font_height = FT_MulDiv( PointSize, dotsPerInch, 72 );
 
 	//
-	//	Locate the font file using Fontconfig
+	//	Locate the font file. On Android fontconfig has no config to load, so
+	//	resolve directly against /system/fonts; everywhere else use fontconfig.
 	//
-	const char *font_path = Locate_Font_FontConfig( font_name );
+	const char *font_path = nullptr;
+#ifdef __ANDROID__
+	font_path = Locate_Font_Android( IsBold );
+#endif
+	if ( font_path == nullptr ) {
+		font_path = Locate_Font_FontConfig( font_name );
+	}
 	if ( font_path == nullptr ) {
 		FT_Done_FreeType( FTLibrary );
 		FTLibrary = nullptr;
