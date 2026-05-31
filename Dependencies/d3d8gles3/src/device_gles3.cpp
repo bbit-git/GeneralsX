@@ -202,6 +202,19 @@ void GLES3Device::SetTransform(uint32_t t, const float* m) {
     // the projected-shadow texgen path.
     else if (t >= 16 && t < 16 + kMaxStages) std::memcpy(texMatrix_[t-16].m, m, sizeof(float)*16);
 }
+void GLES3Device::GetTransform(uint32_t t, float* out) const {
+    // Return the stored transform. Several engine paths read VIEW back and invert
+    // it (terrain cloud/noise + shroud texgen via _Get_DX8_Transform); without
+    // this they'd invert uninitialised garbage -> NaN texture matrix -> the
+    // shroud/cloud texture samples NaN and the whole terrain multiplies to black.
+    static const float kIdentity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    const float* src = kIdentity;
+    if      (t == TS_WORLD)                   src = world_.m;
+    else if (t == TS_VIEW)                    src = view_.m;
+    else if (t == TS_PROJECTION)              src = proj_.m;
+    else if (t >= 16 && t < 16 + kMaxStages)  src = texMatrix_[t-16].m;
+    std::memcpy(out, src, sizeof(float)*16);
+}
 void GLES3Device::SetTexture(uint32_t stage, GLTexture* tex) {
     if (stage < kMaxStages) boundTex_[stage] = tex;
 }

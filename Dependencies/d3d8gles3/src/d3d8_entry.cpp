@@ -500,7 +500,15 @@ public:
         *s = new (std::nothrow) Surface8(this, bbW_, bbH_, D3DFMT_D24S8);
         return *s ? S_OK : E_OUTOFMEMORY;
     }
-    HRESULT STDMETHODCALLTYPE GetTransform(D3DTRANSFORMSTATETYPE, D3DMATRIX*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetTransform(D3DTRANSFORMSTATETYPE t, D3DMATRIX* m) override {
+        // Must actually return the stored matrix: WW3D2 reads VIEW back and inverts
+        // it for the terrain cloud/noise and shroud texgen matrices. A stub left the
+        // matrix uninitialised -> inverse() produced NaN -> shroud UVs were NaN and
+        // the whole in-game terrain multiplied to black.
+        if (!m) return E_POINTER;
+        core_.GetTransform(static_cast<uint32_t>(t), &m->_11);
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE MultiplyTransform(D3DTRANSFORMSTATETYPE, const D3DMATRIX*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetViewport(D3DVIEWPORT8*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetMaterial(D3DMATERIAL8*) override { return S_OK; }

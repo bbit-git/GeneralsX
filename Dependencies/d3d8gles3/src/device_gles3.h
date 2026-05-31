@@ -51,6 +51,7 @@ public:
     void SetRenderState(uint32_t state, uint32_t value);
     void SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value);
     void SetTransform(uint32_t transformType, const float* m4x4);
+    void GetTransform(uint32_t transformType, float* outM4x4) const;
     void SetTexture(uint32_t stage, GLTexture* tex);
     void SetMaterial(const void* d3dmaterial8);    // decoded internally
     void SetLight(uint32_t index, const void* d3dlight8);
