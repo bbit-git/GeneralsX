@@ -59,15 +59,31 @@ public:
 
     void DrawIndexedPrimitive(uint32_t primType, uint32_t minIndex, uint32_t numVertices,
                               uint32_t startIndex, uint32_t primCount);
+    // Non-indexed draw from the bound stream source.
+    void DrawPrimitive(uint32_t primType, uint32_t startVertex, uint32_t primCount);
+    // Immediate-mode (user-pointer) draws: vertex (and index) data live in CPU
+    // memory; uploaded to transient GL buffers per call. Used by the 2D GUI and
+    // the pillarbox present-blit.
+    void DrawPrimitiveUP(uint32_t primType, uint32_t primCount,
+                         const void* vertexData, uint32_t stride);
+    void DrawIndexedPrimitiveUP(uint32_t primType, uint32_t minVertexIndex,
+                                uint32_t numVertices, uint32_t primCount,
+                                const void* indexData, uint32_t indexFmt,
+                                const void* vertexData, uint32_t stride);
 
 private:
     // Translate the deferred D3D state into live GL state + bind the FFP program
-    // for the current FVF/stage/light/fog configuration. Called by Draw*.
-    void ApplyState(uint32_t primType);
+    // for the current FVF/stage/light/fog configuration. ApplyStateCommon does
+    // everything except attribute binding (shared by stream and UP draws);
+    // returns false if program generation failed (draw should be skipped).
+    bool   ApplyStateCommon();
+    void   ApplyState(uint32_t primType);   // common + stream-source attributes
     FFPKey BuildFFPKey() const;
     void   ApplyFixedFunctionUniforms(const FFPProgram& prog);
     void   ApplyBlendDepthStencilCull();
-    void   BindVertexAttributes(const FFPProgram& prog);
+    void   BindVertexAttributes();            // bind stream VB/IB then attributes
+    void   SetupVertexAttributes(int stride); // FVF -> attrib pointers (buffer pre-bound)
+    void   EnsureUPBuffers();                 // lazily create the transient UP VBO/IBO
 
     // ---- presentation ----
     void* swapWindow_ = nullptr;   // SDL_Window* to SDL_GL_SwapWindow in Present()
@@ -103,6 +119,7 @@ private:
     uint32_t  baseVertexIndex_ = 0;
 
     GLuint vao_ = 0;             // single VAO reconfigured per draw
+    GLuint upVBO_ = 0, upIBO_ = 0; // transient buffers for user-pointer (UP) draws
     FFPShaderCache ffpCache_;
     bool   s3tcSupported_ = false;
     int    bbW_ = 0, bbH_ = 0;

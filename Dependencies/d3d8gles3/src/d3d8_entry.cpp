@@ -33,6 +33,7 @@
 #include <d3d8.h>
 #include <new>
 #include <cstring>
+#include <cstdlib>
 
 namespace {
 using namespace d3d8gles3;
@@ -71,6 +72,7 @@ protected:
     void    STDMETHODCALLTYPE PreLoad() override {}
 
 class Device8;   // fwd
+class Surface8;  // fwd
 
 // ---------------------------------------------------------------------------
 // Vertex / Index buffers
@@ -155,9 +157,12 @@ public:
         d->Width = tex_.Width() >> level; d->Height = tex_.Height() >> level;
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE GetSurfaceLevel(UINT, IDirect3DSurface8** s) override {
-        *s = nullptr; return D3DERR_INVALIDCALL; // render-to-mip not yet wired
-    }
+    // Returns a lightweight Surface8 view onto this texture's mip level. WW3D2
+    // uses it to read back a level's D3DSURFACE_DESC (width/height/format) right
+    // after loading a texture (TextureClass::Apply_New_Surface) and to lock a
+    // level for CPU upload — both of which we can satisfy without a real
+    // render-target surface. Defined out-of-line below once Surface8 is visible.
+    HRESULT STDMETHODCALLTYPE GetSurfaceLevel(UINT level, IDirect3DSurface8** s) override;
     HRESULT STDMETHODCALLTYPE LockRect(UINT level, D3DLOCKED_RECT* lr,
                                        const RECT*, DWORD flags) override {
         if (!lr) return E_POINTER;
@@ -175,6 +180,78 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// Surface — a thin view onto one mip level of a Texture8. d3d8gles3 has no
+// standalone render-target surfaces; this exists so the WW3D2 paths that fetch
+// a texture's surface (to read its desc or lock it for upload) work. GetDesc
+// and LockRect/UnlockRect delegate to the owning texture's level methods.
+// ---------------------------------------------------------------------------
+class Surface8 final : public Unknown<IDirect3DSurface8> {
+public:
+    // Texture-level view: GetDesc/LockRect delegate to the owning texture.
+    Surface8(Device8* dev, Texture8* tex, UINT level)
+        : dev_(dev), tex_(tex), level_(level) { if (tex_) tex_->AddRef(); }
+    // Standalone surface (back buffer / render target / image surface). There is
+    // no GL render-target object behind it; it just reports a description and,
+    // if locked, hands out a throwaway scratch buffer so CPU read-back/copy
+    // paths don't crash. width/height/format come from the caller.
+    Surface8(Device8* dev, UINT w, UINT h, D3DFORMAT fmt)
+        : dev_(dev), w_(w), h_(h), fmt_(fmt) {}
+    ~Surface8() override { if (tex_) tex_->Release(); std::free(scratch_); }
+
+    HRESULT STDMETHODCALLTYPE GetDevice(IDirect3DDevice8** d) override {
+        *d = reinterpret_cast<IDirect3DDevice8*>(dev_); return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID, const void*, DWORD, DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID, void*, DWORD*) override { return E_FAIL; }
+    HRESULT STDMETHODCALLTYPE FreePrivateData(REFGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetContainer(REFIID, void** ppc) override {
+        if (!ppc) return E_POINTER;
+        *ppc = static_cast<IDirect3DTexture8*>(tex_);
+        if (tex_) tex_->AddRef();
+        return tex_ ? S_OK : E_NOINTERFACE;
+    }
+    HRESULT STDMETHODCALLTYPE GetDesc(D3DSURFACE_DESC* d) override {
+        if (tex_) return tex_->GetLevelDesc(level_, d);
+        if (!d) return E_POINTER;
+        std::memset(d, 0, sizeof(*d));
+        d->Format = fmt_; d->Type = D3DRTYPE_SURFACE;
+        d->Width = w_; d->Height = h_;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE LockRect(D3DLOCKED_RECT* lr, const RECT* r, DWORD flags) override {
+        if (tex_) return tex_->LockRect(level_, lr, r, flags);
+        if (!lr) return E_POINTER;
+        // Hand out a zeroed scratch buffer sized to the surface (4 bpp upper bound).
+        const size_t pitch = static_cast<size_t>(w_) * 4u;
+        if (!scratch_) scratch_ = std::calloc(pitch ? pitch : 4u, h_ ? h_ : 1u);
+        lr->pBits = scratch_;
+        lr->Pitch = static_cast<INT>(pitch);
+        return scratch_ ? S_OK : E_OUTOFMEMORY;
+    }
+    HRESULT STDMETHODCALLTYPE UnlockRect() override {
+        return (tex_) ? tex_->UnlockRect(level_) : S_OK;
+    }
+private:
+    Device8*  dev_   = nullptr;
+    Texture8* tex_   = nullptr;
+    UINT      level_ = 0;
+    UINT      w_ = 0, h_ = 0;
+    D3DFORMAT fmt_ = D3DFMT_A8R8G8B8;
+    void*     scratch_ = nullptr;
+};
+
+HRESULT STDMETHODCALLTYPE Texture8::GetSurfaceLevel(UINT level, IDirect3DSurface8** s) {
+    if (!s) return E_POINTER;
+    *s = nullptr;
+    // Reject levels past the mip count. Callers like D3DXFilterTexture walk levels
+    // (GetSurfaceLevel(1), (2), ...) until this *fails* to find the end of the mip
+    // chain — vending a surface for every level would spin forever.
+    if (level >= GetLevelCount()) return D3DERR_INVALIDCALL;
+    *s = new (std::nothrow) Surface8(dev_, this, level);
+    return *s ? S_OK : E_OUTOFMEMORY;
+}
+
+// ---------------------------------------------------------------------------
 // Device
 // ---------------------------------------------------------------------------
 class Device8 final : public Unknown<IDirect3DDevice8> {
@@ -190,6 +267,9 @@ public:
         core_.SetSwapWindow(win);
         core_.Init(w, h);
         s3tc_ = false; // queried inside core_.Init via GL extensions
+        bbW_ = static_cast<UINT>(w);
+        bbH_ = static_cast<UINT>(h);
+        bbFmt_ = pp.BackBufferFormat ? pp.BackBufferFormat : D3DFMT_A8R8G8B8;
     }
     ~Device8() override { core_.Shutdown(); }
 
@@ -309,21 +389,50 @@ public:
     WINBOOL STDMETHODCALLTYPE ShowCursor(WINBOOL) override { return FALSE; }
     HRESULT STDMETHODCALLTYPE CreateAdditionalSwapChain(D3DPRESENT_PARAMETERS*, IDirect3DSwapChain8** s) override { if (s) *s = nullptr; return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE Reset(D3DPRESENT_PARAMETERS*) override { core_.OnContextLost(); return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetBackBuffer(UINT, D3DBACKBUFFER_TYPE, IDirect3DSurface8** s) override { if (s) *s = nullptr; return D3DERR_INVALIDCALL; }
+    HRESULT STDMETHODCALLTYPE GetBackBuffer(UINT, D3DBACKBUFFER_TYPE, IDirect3DSurface8** s) override {
+        if (!s) return E_POINTER;
+        *s = new (std::nothrow) Surface8(this, bbW_, bbH_, bbFmt_);
+        return *s ? S_OK : E_OUTOFMEMORY;
+    }
     HRESULT STDMETHODCALLTYPE GetRasterStatus(D3DRASTER_STATUS* r) override { if (r) std::memset(r,0,sizeof(*r)); return S_OK; }
     void    STDMETHODCALLTYPE SetGammaRamp(DWORD, const D3DGAMMARAMP*) override {}
     void    STDMETHODCALLTYPE GetGammaRamp(D3DGAMMARAMP*) override {}
     HRESULT STDMETHODCALLTYPE CreateVolumeTexture(UINT,UINT,UINT,UINT,DWORD,D3DFORMAT,D3DPOOL,IDirect3DVolumeTexture8** o) override { if(o)*o=nullptr; return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE CreateCubeTexture(UINT,UINT,DWORD,D3DFORMAT,D3DPOOL,IDirect3DCubeTexture8** o) override { if(o)*o=nullptr; return D3DERR_INVALIDCALL; }
-    HRESULT STDMETHODCALLTYPE CreateRenderTarget(UINT,UINT,D3DFORMAT,D3DMULTISAMPLE_TYPE,WINBOOL,IDirect3DSurface8** o) override { if(o)*o=nullptr; return D3DERR_INVALIDCALL; }
-    HRESULT STDMETHODCALLTYPE CreateDepthStencilSurface(UINT,UINT,D3DFORMAT,D3DMULTISAMPLE_TYPE,IDirect3DSurface8** o) override { if(o)*o=nullptr; return D3DERR_INVALIDCALL; }
-    HRESULT STDMETHODCALLTYPE CreateImageSurface(UINT,UINT,D3DFORMAT,IDirect3DSurface8** o) override { if(o)*o=nullptr; return D3DERR_INVALIDCALL; }
+    // Standalone surfaces (render target / depth-stencil / lockable image). No GL
+    // render-target object backs them; they report a description and hand out a
+    // CPU scratch buffer when locked. That satisfies WW3D paths that allocate an
+    // offscreen surface and read/write its pixels (e.g. the fog-of-war shroud's
+    // _Create_DX8_Surface src surface) without a real RT.
+    HRESULT STDMETHODCALLTYPE CreateRenderTarget(UINT w,UINT h,D3DFORMAT fmt,D3DMULTISAMPLE_TYPE,WINBOOL,IDirect3DSurface8** o) override {
+        if (!o) return E_POINTER;
+        *o = new (std::nothrow) Surface8(this, w, h, fmt);
+        return *o ? S_OK : E_OUTOFMEMORY;
+    }
+    HRESULT STDMETHODCALLTYPE CreateDepthStencilSurface(UINT w,UINT h,D3DFORMAT fmt,D3DMULTISAMPLE_TYPE,IDirect3DSurface8** o) override {
+        if (!o) return E_POINTER;
+        *o = new (std::nothrow) Surface8(this, w, h, fmt);
+        return *o ? S_OK : E_OUTOFMEMORY;
+    }
+    HRESULT STDMETHODCALLTYPE CreateImageSurface(UINT w,UINT h,D3DFORMAT fmt,IDirect3DSurface8** o) override {
+        if (!o) return E_POINTER;
+        *o = new (std::nothrow) Surface8(this, w, h, fmt);
+        return *o ? S_OK : E_OUTOFMEMORY;
+    }
     HRESULT STDMETHODCALLTYPE CopyRects(IDirect3DSurface8*, const RECT*, UINT, IDirect3DSurface8*, const POINT*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE UpdateTexture(IDirect3DBaseTexture8*, IDirect3DBaseTexture8*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetFrontBuffer(IDirect3DSurface8*) override { return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE SetRenderTarget(IDirect3DSurface8*, IDirect3DSurface8*) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetRenderTarget(IDirect3DSurface8** s) override { if (s) *s = nullptr; return D3DERR_INVALIDCALL; }
-    HRESULT STDMETHODCALLTYPE GetDepthStencilSurface(IDirect3DSurface8** s) override { if (s) *s = nullptr; return D3DERR_INVALIDCALL; }
+    HRESULT STDMETHODCALLTYPE GetRenderTarget(IDirect3DSurface8** s) override {
+        if (!s) return E_POINTER;
+        *s = new (std::nothrow) Surface8(this, bbW_, bbH_, bbFmt_);
+        return *s ? S_OK : E_OUTOFMEMORY;
+    }
+    HRESULT STDMETHODCALLTYPE GetDepthStencilSurface(IDirect3DSurface8** s) override {
+        if (!s) return E_POINTER;
+        *s = new (std::nothrow) Surface8(this, bbW_, bbH_, D3DFMT_D24S8);
+        return *s ? S_OK : E_OUTOFMEMORY;
+    }
     HRESULT STDMETHODCALLTYPE GetTransform(D3DTRANSFORMSTATETYPE, D3DMATRIX*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE MultiplyTransform(D3DTRANSFORMSTATETYPE, const D3DMATRIX*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetViewport(D3DVIEWPORT8*) override { return S_OK; }
@@ -348,9 +457,18 @@ public:
     HRESULT STDMETHODCALLTYPE GetPaletteEntries(UINT, PALETTEENTRY*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE SetCurrentTexturePalette(UINT) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetCurrentTexturePalette(UINT* p) override { if (p) *p = 0; return S_OK; }
-    HRESULT STDMETHODCALLTYPE DrawPrimitive(D3DPRIMITIVETYPE, UINT, UINT) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void*, UINT) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE, UINT, UINT, UINT, const void*, D3DFORMAT, const void*, UINT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE DrawPrimitive(D3DPRIMITIVETYPE t, UINT startVertex, UINT primCount) override {
+        core_.DrawPrimitive(t, startVertex, primCount); return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DrawPrimitiveUP(D3DPRIMITIVETYPE t, UINT primCount,
+                                              const void* vtx, UINT stride) override {
+        core_.DrawPrimitiveUP(t, primCount, vtx, stride); return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE t, UINT minVtxIdx, UINT numVtx,
+                                                     UINT primCount, const void* idx, D3DFORMAT idxFmt,
+                                                     const void* vtx, UINT stride) override {
+        core_.DrawIndexedPrimitiveUP(t, minVtxIdx, numVtx, primCount, idx, idxFmt, vtx, stride); return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE ProcessVertices(UINT, UINT, UINT, IDirect3DVertexBuffer8*, DWORD) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE CreateVertexShader(const DWORD*, const DWORD*, DWORD*, DWORD) override { return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE GetVertexShader(DWORD* h) override { if (h) *h = 0; return S_OK; }
@@ -378,6 +496,8 @@ private:
     IDirect3D8* parent_;
     GLES3Device core_;
     bool        s3tc_ = false;
+    UINT        bbW_ = 0, bbH_ = 0;
+    D3DFORMAT   bbFmt_ = D3DFMT_A8R8G8B8;
 };
 
 // ---------------------------------------------------------------------------

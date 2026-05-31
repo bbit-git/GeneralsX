@@ -154,6 +154,16 @@ bool DX8Wrapper::Pillarbox_Setup(int gameW, int gameH)
 {
 	Pillarbox_Cleanup();
 
+#if defined(__ANDROID__)
+	// d3d8gles3 has no real offscreen render targets — SetRenderTarget is a no-op,
+	// so render-to-texture pillarboxing would render the scene to the default
+	// framebuffer and then blit an *empty* offscreen texture over it (black screen).
+	// Render straight to the backbuffer instead; aspect-fit letterboxing is a
+	// post-first-playable concern.
+	(void)gameW; (void)gameH;
+	return false;
+#endif
+
 	// Determine backbuffer dimensions from the active present parameters first.
 	// GeneralsX @bugfix GitHub Copilot 27/04/2026 Using native display size here can diverge from
 	// the actual DXVK backbuffer during SDL fullscreen transitions and cause zoom/crop artifacts.
@@ -177,15 +187,19 @@ bool DX8Wrapper::Pillarbox_Setup(int gameW, int gameH)
 	// Create offscreen render target at game resolution
 	HRESULT hr = D3DDevice->CreateTexture(gameW, gameH, 1, D3DUSAGE_RENDERTARGET,
 		D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &s_offscreenTex);
-	if (FAILED(hr)) return false;
+	if (FAILED(hr) || !s_offscreenTex) { Pillarbox_Cleanup(); return false; }
 	s_offscreenTex->GetSurfaceLevel(0, &s_offscreenSurf);
+	// GeneralsX @bugfix Some backends (e.g. d3d8gles3 on Android) don't expose
+	// offscreen render-target surfaces. Without a surface there's no pillarbox to
+	// draw into, so disable it cleanly rather than dereferencing the null surface
+	// in the failure path below.
+	if (!s_offscreenSurf) { Pillarbox_Cleanup(); return false; }
 
 	// Create dedicated depth stencil at game resolution
 	hr = D3DDevice->CreateDepthStencilSurface(gameW, gameH,
 		_PresentParameters.AutoDepthStencilFormat, D3DMULTISAMPLE_NONE, &s_depthSurf);
-	if (FAILED(hr)) {
-		s_offscreenSurf->Release(); s_offscreenSurf = nullptr;
-		s_offscreenTex->Release(); s_offscreenTex = nullptr;
+	if (FAILED(hr) || !s_depthSurf) {
+		Pillarbox_Cleanup();
 		return false;
 	}
 
@@ -418,6 +432,12 @@ static DynamicVectorClass<RenderDeviceDescClass>	_RenderDeviceDescriptionTable;
 
 typedef IDirect3D8* (WINAPI *Direct3DCreate8Type) (UINT SDKVersion);
 Direct3DCreate8Type	Direct3DCreate8Ptr = nullptr;
+
+#if defined(SAGE_USE_GLES3)
+// Statically-linked entry from the d3d8gles3 backend (Android). Declared at file
+// scope because C-linkage specifiers are not permitted inside a function body.
+extern "C" IDirect3D8 * WINAPI Direct3DCreate8(UINT SDKVersion);
+#endif
 HINSTANCE D3D8Lib = nullptr;
 
 DX8_CleanupHook	 *DX8Wrapper::m_pCleanupHook=nullptr;
@@ -568,6 +588,16 @@ bool DX8Wrapper::Init(void * hwnd, bool lite)
 	Invalidate_Cached_Render_States();
 
 	if (!lite) {
+#if defined(SAGE_USE_GLES3)
+		// GeneralsX @feature Android: the d3d8gles3 (D3D8->OpenGL ES 3.0) backend
+		// is statically linked into the engine and exports Direct3DCreate8. Call
+		// it directly — there is no DXVK shared library to dlopen on Android.
+		{
+			Direct3DCreate8Ptr = &Direct3DCreate8;
+			D3D8Lib = (HMODULE)(uintptr_t)1; // non-null sentinel; nothing to FreeLibrary
+			fprintf(stderr, "DEBUG: DX8Wrapper::Init() - Using static d3d8gles3 Direct3DCreate8\n");
+		}
+#else
 		// GeneralsX @build BenderAI 10/02/2026 - Platform-specific DLL/SO/DYLIB loading (Phase 5: macOS)
 #ifdef _WIN32
 		D3D8Lib = LoadLibrary("D3D8.DLL");
@@ -600,6 +630,7 @@ bool DX8Wrapper::Init(void * hwnd, bool lite)
 			fprintf(stderr, "ERROR: DX8Wrapper::Init() - Failed to get Direct3DCreate8 function\n");
 			return false;
 		}
+#endif // SAGE_USE_GLES3
 
 		/*
 		** Create the D3D interface object
@@ -659,10 +690,16 @@ void DX8Wrapper::Shutdown()
 		}
 	}
 
+#if defined(SAGE_USE_GLES3)
+	// D3D8Lib is a non-null sentinel under GLES3 (statically-linked backend, no
+	// dlopen) — never FreeLibrary it.
+	D3D8Lib = nullptr;
+#else
 	if (D3D8Lib) {
 		FreeLibrary(D3D8Lib);
 		D3D8Lib = nullptr;
 	}
+#endif
 
 	_RenderDeviceNameTable.Clear();		 // note - Delete_All() resizes the vector, causing a reallocation.  Clear is better. jba.
 	_RenderDeviceShortNameTable.Clear();
@@ -677,25 +714,37 @@ void DX8Wrapper::Do_Onetime_Device_Dependent_Inits()
 	/*
 	** Set Global render states (some of which depend on caps)
 	*/
+	fprintf(stderr, "DEBUG: Onetime: Compute_Caps\n");
 	Compute_Caps(D3DFormat_To_WW3DFormat(DisplayFormat));
 
    /*
 	** Initialize any other subsystems inside of WW3D
 	*/
+	fprintf(stderr, "DEBUG: Onetime: MissingTexture::_Init\n");
 	MissingTexture::_Init();
+	fprintf(stderr, "DEBUG: Onetime: TextureFilterClass::_Init_Filters\n");
 	TextureFilterClass::_Init_Filters(
 		(TextureFilterClass::TextureFilterMode)WW3D::Get_Texture_Filter(),
 		(TextureFilterClass::AnisotropicFilterMode)WW3D::Get_Anisotropy_Level()
 	);
+	fprintf(stderr, "DEBUG: Onetime: TheDX8MeshRenderer.Init\n");
 	TheDX8MeshRenderer.Init();
+	fprintf(stderr, "DEBUG: Onetime: SHD_INIT\n");
 	SHD_INIT;
+	fprintf(stderr, "DEBUG: Onetime: BoxRenderObjClass::Init\n");
 	BoxRenderObjClass::Init();
+	fprintf(stderr, "DEBUG: Onetime: VertexMaterialClass::Init\n");
 	VertexMaterialClass::Init();
+	fprintf(stderr, "DEBUG: Onetime: PointGroupClass::_Init\n");
 	PointGroupClass::_Init(); // This needs the VertexMaterialClass to be initted
+	fprintf(stderr, "DEBUG: Onetime: ShatterSystem::Init\n");
 	ShatterSystem::Init();
+	fprintf(stderr, "DEBUG: Onetime: TextureLoader::Init\n");
 	TextureLoader::Init();
 
+	fprintf(stderr, "DEBUG: Onetime: Set_Default_Global_Render_States\n");
 	Set_Default_Global_Render_States();
+	fprintf(stderr, "DEBUG: Onetime: all inits done\n");
 }
 
 inline DWORD F2DW(float f) { return *((unsigned*)&f); }
@@ -860,6 +909,7 @@ bool DX8Wrapper::Create_Device()
 	// the graphics driver from potentially loading the old game dbghelp.dll and then crashing the game process.
 	DbgHelpGuard dbgHelpGuard;
 
+	fprintf(stderr, "DEBUG: Create_Device: calling D3DInterface->CreateDevice D3DInterface=%p _Hwnd=%p\n", (void*)D3DInterface, (void*)_Hwnd);
 	HRESULT hr=D3DInterface->CreateDevice
 	(
 		CurRenderDevice,
@@ -869,6 +919,7 @@ bool DX8Wrapper::Create_Device()
 		&_PresentParameters,
 		&D3DDevice
 	);
+	fprintf(stderr, "DEBUG: Create_Device: CreateDevice hr=0x%lx D3DDevice=%p\n", (unsigned long)hr, (void*)D3DDevice);
 
 	if (FAILED(hr))
 	{
@@ -909,7 +960,9 @@ bool DX8Wrapper::Create_Device()
 	/*
 	** Initialize all subsystems
 	*/
+	fprintf(stderr, "DEBUG: Create_Device: entering Do_Onetime_Device_Dependent_Inits\n");
 	Do_Onetime_Device_Dependent_Inits();
+	fprintf(stderr, "DEBUG: Create_Device: Do_Onetime_Device_Dependent_Inits done\n");
 	return true;
 }
 
@@ -1010,7 +1063,11 @@ void DX8Wrapper::Enumerate_Devices()
 {
 	DX8_Assert();
 
+	fprintf(stderr, "DEBUG: Enumerate_Devices ENTER &D3DInterface=%p D3DInterface=%p\n",
+		(void*)&D3DInterface, (void*)D3DInterface);
 	int adapter_count = D3DInterface->GetAdapterCount();
+	fprintf(stderr, "DEBUG: Enumerate_Devices adapter_count=%d D3DInterface=%p\n",
+		adapter_count, (void*)D3DInterface);
 	for (int adapter_index=0; adapter_index<adapter_count; adapter_index++) {
 
 		D3DADAPTER_IDENTIFIER8 id;
@@ -1036,20 +1093,27 @@ void DX8Wrapper::Enumerate_Devices()
 
 			desc.set_driver_version(buf);
 
+			fprintf(stderr, "DEBUG: Enum adapter=%d before GetDeviceCaps D3DInterface=%p\n", adapter_index, (void*)D3DInterface);
 			D3DInterface->GetDeviceCaps(adapter_index,WW3D_DEVTYPE,&desc.Caps);
 			D3DInterface->GetAdapterIdentifier(adapter_index,D3DENUM_NO_WHQL_LEVEL,&desc.AdapterIdentifier);
 
+			fprintf(stderr, "DEBUG: Enum adapter=%d before DX8Caps ctor D3DInterface=%p\n", adapter_index, (void*)D3DInterface);
 			DX8Caps dx8caps(D3DInterface,desc.Caps,WW3D_FORMAT_UNKNOWN,desc.AdapterIdentifier);
+			fprintf(stderr, "DEBUG: Enum adapter=%d after DX8Caps ctor D3DInterface=%p\n", adapter_index, (void*)D3DInterface);
 
 			/*
 			** Enumerate the resolutions
 			*/
 			desc.reset_resolution_list();
 			int mode_count = D3DInterface->GetAdapterModeCount(adapter_index);
+			fprintf(stderr, "DEBUG: Enum adapter=%d mode_count=%d D3DInterface=%p\n", adapter_index, mode_count, (void*)D3DInterface);
 			for (int mode_index=0; mode_index<mode_count; mode_index++) {
 				D3DDISPLAYMODE d3dmode;
 				::ZeroMemory(&d3dmode, sizeof(D3DDISPLAYMODE));
+				fprintf(stderr, "DEBUG: Enum mode=%d before EnumAdapterModes D3DInterface=%p\n", mode_index, (void*)D3DInterface);
 				HRESULT res = D3DInterface->EnumAdapterModes(adapter_index,mode_index,&d3dmode);
+				fprintf(stderr, "DEBUG: Enum mode=%d after EnumAdapterModes res=0x%lx %ux%u fmt=%d\n",
+					mode_index, (unsigned long)res, d3dmode.Width, d3dmode.Height, (int)d3dmode.Format);
 
 				if (res == D3D_OK) {
 					int bits = 0;
@@ -1063,20 +1127,25 @@ void DX8Wrapper::Enumerate_Devices()
 						case D3DFMT_X1R5G5B5:		bits = 16; break;
 					}
 
+					fprintf(stderr, "DEBUG: Enum mode=%d bits=%d before Is_Valid_Display_Format\n", mode_index, bits);
 					// Some cards fail in certain modes, DX8Caps keeps list of those.
 					if (!dx8caps.Is_Valid_Display_Format(d3dmode.Width,d3dmode.Height,D3DFormat_To_WW3DFormat(d3dmode.Format))) {
 						bits=0;
 					}
+					fprintf(stderr, "DEBUG: Enum mode=%d after Is_Valid_Display_Format bits=%d\n", mode_index, bits);
 
 					/*
 					** If we recognize the format, add it to the list
 					** TODO: should we handle more formats?  will any cards report more than 24 or 16 bit?
 					*/
 					if (bits != 0) {
+						fprintf(stderr, "DEBUG: Enum mode=%d before add_resolution %ux%u\n", mode_index, d3dmode.Width, d3dmode.Height);
 						desc.add_resolution(d3dmode.Width,d3dmode.Height,bits);
+						fprintf(stderr, "DEBUG: Enum mode=%d after add_resolution\n", mode_index);
 					}
 				}
 			}
+			fprintf(stderr, "DEBUG: Enum adapter=%d mode loop done, res_count=%d\n", adapter_index, desc.Enumerate_Resolutions().Count());
 
 			// IML: If the device has one or more valid resolutions add it to the device list.
 			// NOTE: Testing has shown that there are drivers with zero resolutions.
@@ -1446,15 +1515,21 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 		WWDEBUG_SAY(("DX8Wrapper::Set_Render_Device is resetting the device."));
 		ret = Reset_Device(restore_assets);	//reset device without restoring data - we're likely switching out of the app.
 	}
-	else
+	else {
+		fprintf(stderr, "DEBUG: SRD: calling Create_Device()\n");
 		ret = Create_Device();
+		fprintf(stderr, "DEBUG: SRD: Create_Device() returned %d\n", ret);
+	}
 
 	WWDEBUG_SAY(("Reset/Create_Device done, reset_device=%d, restore_assets=%d", reset_device, restore_assets));
 
 	if (ret)
 	{
+		fprintf(stderr, "DEBUG: SRD: before Set_Screen_Resolution %dx%d\n", ResolutionWidth, ResolutionHeight);
 		Render2DClass::Set_Screen_Resolution( RectClass( 0, 0, ResolutionWidth, ResolutionHeight ) );
+		fprintf(stderr, "DEBUG: SRD: before Pillarbox_Setup\n");
 		Pillarbox_Setup(ResolutionWidth, ResolutionHeight);
+		fprintf(stderr, "DEBUG: SRD: after Pillarbox_Setup\n");
 	}
 
 	return ret;

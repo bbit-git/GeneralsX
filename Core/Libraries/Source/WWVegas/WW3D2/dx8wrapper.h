@@ -913,6 +913,14 @@ WWINLINE void DX8Wrapper::Set_DX8_Light(int index, D3DLIGHT8* light)
 
 WWINLINE void DX8Wrapper::Set_DX8_Render_State(D3DRENDERSTATETYPE state, unsigned value)
 {
+	// D3DRS_PATCHSEGMENTS drives fixed-function N-patch (hardware) tessellation, which
+	// none of our backends implement: DXVK logs "Unimplemented render state" and ignores
+	// it, and the d3d8gles3 backend has no case for it either. The engine flips the
+	// N-patch shader bit between draws (see shader.cpp), so forwarding this would flood
+	// the console with warnings while doing nothing. Drop it here, at the single choke
+	// point shared by both games and every call site.
+	if (state==D3DRS_PATCHSEGMENTS) return;
+
 	// Can't monitor state changes because setShader call to GERD may change the states!
 	if (RenderStates[state]==value) return;
 

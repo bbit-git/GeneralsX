@@ -38,6 +38,10 @@ enum {
 // D3DTRANSFORMSTATETYPE
 enum { TS_VIEW=2, TS_PROJECTION=3, TS_WORLD=256 };
 
+// DEBUG counters (strip before commit) — see if draws reach GL each frame.
+unsigned long g_dbgFrame = 0, g_dbgDrawIdx = 0, g_dbgDrawArr = 0,
+              g_dbgDrawUP = 0, g_dbgDrawIdxUP = 0, g_dbgClear = 0;
+
 static inline void U8x4FromARGB(uint32_t c, float out[4]) {
     out[3] = ((c >> 24) & 0xFF) / 255.0f; // A
     out[0] = ((c >> 16) & 0xFF) / 255.0f; // R
@@ -61,13 +65,21 @@ bool GLES3Device::Init(int w, int h) {
 
 void GLES3Device::Shutdown() {
     ffpCache_.Clear();
-    if (vao_) { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
+    if (vao_)   { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
+    if (upVBO_) { glDeleteBuffers(1, &upVBO_); upVBO_ = 0; }
+    if (upIBO_) { glDeleteBuffers(1, &upIBO_); upIBO_ = 0; }
     initialized_ = false;
 }
 
 void GLES3Device::OnContextLost() {
     ffpCache_.Clear();
     vao_ = 0;
+    upVBO_ = 0; upIBO_ = 0;   // GL objects are gone with the context
+}
+
+void GLES3Device::EnsureUPBuffers() {
+    if (!upVBO_) glGenBuffers(1, &upVBO_);
+    if (!upIBO_) glGenBuffers(1, &upIBO_);
 }
 
 // ---- frame -----------------------------------------------------------------
@@ -87,14 +99,22 @@ void GLES3Device::Clear(bool color, bool depthStencil, const float rgba[4],
         glDepthMask(GL_TRUE);   // depth clear needs depth writes enabled
         mask |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
     }
-    if (mask) glClear(mask);
+    if (mask) { glClear(mask); ++g_dbgClear; }
 }
 
 void GLES3Device::BeginScene() { /* nothing: GLES has no scene begin */ }
 void GLES3Device::EndScene()   { glFlush(); }
+
 void GLES3Device::Present()    {
     // Flip the SDL-owned GL context. swapWindow_ is the SDL_Window* handed down
     // from D3D8 CreateDevice (null in host unit tests -> no-op).
+    if ((g_dbgFrame % 60) == 0) {
+        GLenum e = glGetError();
+        fprintf(stderr, "DEBUG: Present frame=%lu clears=%lu drawIdx=%lu drawArr=%lu drawUP=%lu drawIdxUP=%lu glErr=0x%x swapWin=%p\n",
+                g_dbgFrame, g_dbgClear, g_dbgDrawIdx, g_dbgDrawArr, g_dbgDrawUP, g_dbgDrawIdxUP, (unsigned)e, swapWindow_);
+        fflush(stderr);
+    }
+    ++g_dbgFrame;
     if (swapWindow_) SDL_GL_SwapWindow(static_cast<SDL_Window*>(swapWindow_));
 }
 
@@ -327,12 +347,18 @@ static uint32_t TexCoordSize(uint32_t fvf, int set) {
     switch (bits) { case 1: return 3; case 2: return 4; case 3: return 1; default: return 2; }
 }
 
-void GLES3Device::BindVertexAttributes(const FFPProgram&) {
+void GLES3Device::BindVertexAttributes() {
     if (!streamVB_[0]) return;
     streamVB_[0]->BindAs(GL_ARRAY_BUFFER);
     if (indexBuffer_) indexBuffer_->BindAs(GL_ELEMENT_ARRAY_BUFFER);
+    SetupVertexAttributes(static_cast<int>(streamStride_[0]));
+}
 
-    const GLsizei stride = static_cast<GLsizei>(streamStride_[0]);
+// Configure the FVF-derived vertex attribute pointers against whatever buffer is
+// currently bound to GL_ARRAY_BUFFER (the stream VB for indexed/array draws, or
+// the transient UP VBO for user-pointer draws). `stride` is the vertex size.
+void GLES3Device::SetupVertexAttributes(int strideIn) {
+    const GLsizei stride = static_cast<GLsizei>(strideIn);
     const uint32_t fvf = fvf_;
     uintptr_t off = 0;
     auto attrib = [&](GLuint loc, GLint size, GLenum type, GLboolean norm, uint32_t bytes) {
@@ -368,13 +394,13 @@ void GLES3Device::BindVertexAttributes(const FFPProgram&) {
     }
 }
 
-void GLES3Device::ApplyState(uint32_t /*primType*/) {
+bool GLES3Device::ApplyStateCommon() {
     glBindVertexArray(vao_);
     ApplyBlendDepthStencilCull();
 
     FFPKey key = BuildFFPKey();
     const FFPProgram* prog = ffpCache_.GetProgram(key);
-    if (!prog) return;                 // generation failed; skip draw (logged)
+    if (!prog) return false;           // generation failed; skip draw (logged)
     glUseProgram(prog->program);
 
     // bind textures + samplers
@@ -388,7 +414,12 @@ void GLES3Device::ApplyState(uint32_t /*primType*/) {
     }
 
     ApplyFixedFunctionUniforms(*prog);
-    BindVertexAttributes(*prog);
+    return true;
+}
+
+void GLES3Device::ApplyState(uint32_t /*primType*/) {
+    if (!ApplyStateCommon()) return;
+    BindVertexAttributes();
 }
 
 void GLES3Device::DrawIndexedPrimitive(uint32_t primType, uint32_t /*minIndex*/,
@@ -407,6 +438,62 @@ void GLES3Device::DrawIndexedPrimitive(uint32_t primType, uint32_t /*minIndex*/,
     // applied when the index data is uploaded (resources layer).
     const void* offset = reinterpret_cast<const void*>(static_cast<uintptr_t>(startIndex * idxSize));
     glDrawElements(mode, static_cast<GLsizei>(indexCount), idxType, offset);
+    ++g_dbgDrawIdx;
+}
+
+void GLES3Device::DrawPrimitive(uint32_t primType, uint32_t startVertex, uint32_t primCount) {
+    if (!streamVB_[0]) return;
+    if (!ApplyStateCommon()) return;
+    BindVertexAttributes();   // binds the stream VB + FVF attributes
+    // PrimitiveCountToIndexCount gives the index count for a prim count; for a
+    // non-indexed draw that's exactly the vertex count consumed.
+    const GLsizei vertCount = static_cast<GLsizei>(PrimitiveCountToIndexCount(primType, primCount));
+    glDrawArrays(MapPrimitiveType(primType), static_cast<GLint>(startVertex), vertCount);
+    ++g_dbgDrawArr;
+}
+
+void GLES3Device::DrawPrimitiveUP(uint32_t primType, uint32_t primCount,
+                                  const void* vertexData, uint32_t stride) {
+    if (!vertexData || !stride) return;
+    if (!ApplyStateCommon()) return;
+
+    const GLsizei vertCount = static_cast<GLsizei>(PrimitiveCountToIndexCount(primType, primCount));
+    EnsureUPBuffers();
+    glBindBuffer(GL_ARRAY_BUFFER, upVBO_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertCount) * stride,
+                 vertexData, GL_STREAM_DRAW);
+    // No element buffer for a non-indexed draw; clear any stale VAO binding.
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    SetupVertexAttributes(static_cast<int>(stride));
+    glDrawArrays(MapPrimitiveType(primType), 0, vertCount);
+    ++g_dbgDrawUP;
+}
+
+void GLES3Device::DrawIndexedPrimitiveUP(uint32_t primType, uint32_t minVertexIndex,
+                                         uint32_t numVertices, uint32_t primCount,
+                                         const void* indexData, uint32_t indexFmt,
+                                         const void* vertexData, uint32_t stride) {
+    if (!vertexData || !indexData || !stride) return;
+    if (!ApplyStateCommon()) return;
+
+    // D3DFMT_INDEX32 == 102, D3DFMT_INDEX16 == 101.
+    const bool is32 = (indexFmt == 102);
+    const GLenum idxType = is32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
+    const size_t idxSize = is32 ? 4 : 2;
+    const GLsizei indexCount = static_cast<GLsizei>(PrimitiveCountToIndexCount(primType, primCount));
+
+    EnsureUPBuffers();
+    // The UP vertex pointer addresses vertex 0; indices are absolute, so upload
+    // through the highest referenced vertex (minVertexIndex + numVertices).
+    const GLsizeiptr vbBytes = static_cast<GLsizeiptr>(minVertexIndex + numVertices) * stride;
+    glBindBuffer(GL_ARRAY_BUFFER, upVBO_);
+    glBufferData(GL_ARRAY_BUFFER, vbBytes, vertexData, GL_STREAM_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, upIBO_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indexCount) * idxSize,
+                 indexData, GL_STREAM_DRAW);
+    SetupVertexAttributes(static_cast<int>(stride));
+    glDrawElements(MapPrimitiveType(primType), indexCount, idxType, nullptr);
+    ++g_dbgDrawIdxUP;
 }
 
 } // namespace d3d8gles3

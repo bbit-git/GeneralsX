@@ -102,7 +102,13 @@ void* GLTexture::LockRect(uint32_t level, uint32_t& outPitch, uint32_t /*flags*/
     const uint32_t bytes = compressed_
         ? ((L.w + 3) / 4) * ((L.h + 3) / 4) * (d3dFormat_ == 0x31545844 /*DXT1*/ ? 8 : 16)
         : L.pitch * L.h;
-    L.staging.resize(bytes);
+    // For uncompressed locks add a slab of slack rows. Some WW3D2 CPU fills write
+    // a tile-class "border" a few rows past the logical bottom edge of the
+    // surface (TerrainTextureClass::update) — on real D3D the lock buffer has
+    // slack, but our staging is exact, so those writes/reads would run off the
+    // end. UnlockRect only uploads L.w x L.h, so the extra rows are never sent to
+    // GL; they just absorb the engine's out-of-bounds border access.
+    L.staging.resize(compressed_ ? bytes : (bytes + L.pitch * L.h));
     outPitch = compressed_ ? ((L.w + 3) / 4) * (d3dFormat_ == 0x31545844 ? 8 : 16) : L.pitch;
     (void)fmt;
     return L.staging.data();
