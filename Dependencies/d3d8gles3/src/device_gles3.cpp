@@ -427,6 +427,19 @@ bool GLES3Device::ApplyStateCommon() {
         }
     }
 
+    // DIAG: characterize untextured draws (the flat-white surfaces). Log FVF,
+    // pretransformed flag, projection diagonal (identity≈1,1,1,1 => 2D ortho;
+    // else perspective => 3D), and cull/blend state.
+    if (!boundTex_[0]) {
+        static unsigned long s_n = 0;
+        if ((++s_n % 200) == 1)
+            fprintf(stderr, "DIAG: untex draw #%lu fvf=0x%x pretransf=%d proj.diag=[%.3f %.3f %.3f %.3f] cull=%u blend=%u stage0op=%u arg1=%u arg2=%u\n",
+                    s_n, fvf_, (int)key.isPretransformed,
+                    proj_.m[0], proj_.m[5], proj_.m[10], proj_.m[15],
+                    renderStates_[RS_CULLMODE], renderStates_[RS_ALPHABLENDENABLE],
+                    key.stages[0].colorOp, key.stages[0].colorArg1, key.stages[0].colorArg2);
+    }
+
     ApplyFixedFunctionUniforms(*prog);
     return true;
 }
