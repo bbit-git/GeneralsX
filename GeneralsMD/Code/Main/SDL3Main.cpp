@@ -30,13 +30,23 @@
 
 // SYSTEM INCLUDES
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <cstdio>
-#include <unistd.h>   // _exit()
+#include <unistd.h>   // _exit() / chdir()
+
+#if defined(__ANDROID__)
+// On Android SDL's SDLActivity loads libmain.so and resolves SDL_main from it.
+// SDL_main.h #defines main -> SDL_main so the symbol is exported.
+#include <SDL3/SDL_main.h>
+#include <GLES3/gl3.h>   // glGetString() for the GLES3 backend log
+#include <android/log.h> // redirect engine stdio to logcat
+#include <pthread.h>
+#else
+#include <SDL3/SDL_vulkan.h>
 #include <glob.h>     // glob() for Vulkan ICD discovery
+#endif
 
 // USER INCLUDES (match WinMain.cpp pattern)
 #include "Lib/BaseType.h"
@@ -49,9 +59,11 @@
 #include "Common/version.h"  // GeneralsX @bugfix BenderAI 14/02/2026 Version class + TheVersion extern
 #include "SDL3GameEngine.h"
 
-// DXVK WSI
+// DXVK WSI (desktop only; Android uses the d3d8gles3 GLES3 backend, no DXVK/Vulkan)
+#if !defined(__ANDROID__)
 #define DXVK_WSI_SDL3 1
 #include <wsi/native_wsi.h>
+#endif
 
 // CRITICAL SECTIONS (Linux needs these too)
 static CriticalSection critSec1;
@@ -78,6 +90,12 @@ HWND ApplicationHWnd = nullptr;  ///< our application window handle
 // SDL3 window created in main() before GameMain(), stored globally for engine access
 SDL_Window* TheSDL3Window = nullptr;
 
+#if defined(__ANDROID__)
+// GLES3 context owned by the entry point; the d3d8gles3 backend renders into it
+// and SDL_GL_SwapWindow() (via d3d8gles3 Present) flips it. See device_gles3.cpp.
+SDL_GLContext TheSDL3GLContext = nullptr;
+#endif
+
 // GAME TEXT FILE PATHS
 // TheSuperHackers @build felipebraz 13/02/2026
 // GameText.cpp uses these paths to load CSF and STR files (game localization)
@@ -88,6 +106,36 @@ const Char *g_strFile = "data/Generals.str";     ///< STR file path
 
 // Extern declarations (from GameMain.cpp)
 extern Int GameMain();
+
+#if defined(__ANDROID__)
+// Android has no console: the engine's stdout/stderr go nowhere. Pipe both to
+// logcat (tag "GeneralsX") so the boot banner, GLES3 init log and any error or
+// assert are visible via `adb logcat`. Worth keeping for all on-device debugging.
+static int s_logPipe[2];
+static void* AndroidStdioToLogcat(void*)
+{
+	char buf[1024];
+	ssize_t n;
+	while ((n = read(s_logPipe[0], buf, sizeof(buf) - 1)) > 0) {
+		if (buf[n - 1] == '\n') --n;
+		buf[n] = '\0';
+		__android_log_write(ANDROID_LOG_INFO, "GeneralsX", buf);
+	}
+	return nullptr;
+}
+static void RedirectStdioToLogcat()
+{
+	setvbuf(stdout, nullptr, _IOLBF, 0);
+	setvbuf(stderr, nullptr, _IONBF, 0);
+	if (pipe(s_logPipe) != 0) return;
+	dup2(s_logPipe[1], STDOUT_FILENO);
+	dup2(s_logPipe[1], STDERR_FILENO);
+	pthread_t t;
+	if (pthread_create(&t, nullptr, AndroidStdioToLogcat, nullptr) == 0) {
+		pthread_detach(t);
+	}
+}
+#endif
 
 /**
  * FilterSoftwareVulkanICDs
@@ -105,6 +153,7 @@ extern Int GameMain();
  *
  * GeneralsX @bugfix BenderAI 06/03/2026
  */
+#if !defined(__ANDROID__)
 static void FilterSoftwareVulkanICDs()
 {
 	if (getenv("VK_DRIVER_FILES") || getenv("VK_ICD_FILENAMES")) {
@@ -159,6 +208,7 @@ static void FilterSoftwareVulkanICDs()
 		fprintf(stderr, "WARNING: If startup crashes in libvulkan_lvp.so, set VK_DRIVER_FILES manually\n");
 	}
 }
+#endif // !__ANDROID__
 
 /**
  * FilterPipeWireOpenAL
@@ -236,6 +286,10 @@ int main(int argc, char* argv[])
 {
 	int exitcode = 1;
 
+#if defined(__ANDROID__)
+	RedirectStdioToLogcat();
+#endif
+
 	// TheSuperHackers @build felipebraz 13/02/2026
 	// Store command line arguments in globals for CommandLine.cpp parser
 	__argc = argc;
@@ -274,51 +328,121 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "INFO: Headless mode detected, skipping SDL3 video/Vulkan window initialization\n");
 		} else {
 
-		// GeneralsX @bugfix felipebraz 16/02/2026
-		// Initialize SDL3 and Vulkan BEFORE creating GameEngine (fighter19 pattern)
-		// This prevents LLVM SIGSEGV crash during Vulkan driver enumeration
-		// Must be done here, not in SDL3GameEngine::init() which is too late
-		fprintf(stderr, "INFO: Initializing SDL3 video subsystem...\n");
-		if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
-			fprintf(stderr, "FATAL: Failed to initialize SDL3: %s\n", SDL_GetError());
-			return 1;
+			// GeneralsX @bugfix felipebraz 16/02/2026
+			// Initialize SDL3 and Vulkan BEFORE creating GameEngine (fighter19 pattern)
+			// This prevents LLVM SIGSEGV crash during Vulkan driver enumeration
+			// Must be done here, not in SDL3GameEngine::init() which is too late
+			fprintf(stderr, "INFO: Initializing SDL3 video subsystem...\n");
+			if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+				fprintf(stderr, "FATAL: Failed to initialize SDL3: %s\n", SDL_GetError());
+				return 1;
+			}
+
+#if defined(__ANDROID__)
+			// GeneralsX @feature Android d3d8gles3 bring-up.
+			// No DXVK/Vulkan on Android: the d3d8gles3 backend renders into an
+			// SDL-owned OpenGL ES 3.0 context. Touch acts as mouse so the existing
+			// mouse path (SDL3Mouse / SDL3GameEngine) drives the menus unchanged.
+			SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+			SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+
+			// Request a GLES 3.0 context (d3d8gles3 uses VAOs, which require ES3).
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+			// The W3D scene needs depth testing (and stencil for shadows); request
+			// the buffers explicitly so every EGLConfig we get has them.
+			SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+			SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+
+			fprintf(stderr, "INFO: Creating SDL3 OpenGL ES window...\n");
+			// Android ignores the requested size and uses the full display.
+			TheSDL3Window = SDL_CreateWindow(
+				"Command & Conquer Generals: Zero Hour",
+				0, 0,
+				SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN
+			);
+			if (!TheSDL3Window) {
+				fprintf(stderr, "FATAL: Failed to create SDL3 GL window: %s\n", SDL_GetError());
+				SDL_Quit();
+				return 1;
+			}
+
+			TheSDL3GLContext = SDL_GL_CreateContext(TheSDL3Window);
+			if (!TheSDL3GLContext) {
+				fprintf(stderr, "FATAL: Failed to create GLES3 context: %s\n", SDL_GetError());
+				SDL_DestroyWindow(TheSDL3Window);
+				TheSDL3Window = nullptr;
+				SDL_Quit();
+				return 1;
+			}
+			SDL_GL_MakeCurrent(TheSDL3Window, TheSDL3GLContext);
+			SDL_GL_SetSwapInterval(1);
+			fprintf(stderr, "INFO: GLES3 context created. GL_VERSION=%s  GL_RENDERER=%s\n",
+				(const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
+#else
+			// Set DXVK WSI driver before loading Vulkan
+			setenv("DXVK_WSI_DRIVER", "SDL3", 1);
+
+			// GeneralsX @bugfix BenderAI 06/03/2026 - Exclude LLVMpipe Vulkan ICD before loading Vulkan.
+			// libvulkan_lvp.so crashes during static initialization with LLVM 20.x when the Vulkan
+			// loader enumerates all ICDs. Restrict to hardware ICDs first.
+			FilterSoftwareVulkanICDs();
+			FilterPipeWireOpenAL();
+
+			// Load Vulkan library for DXVK DirectX8→Vulkan translation
+			fprintf(stderr, "INFO: Loading Vulkan library...\n");
+			if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+				fprintf(stderr, "WARNING: Failed to load Vulkan: %s\n", SDL_GetError());
+				fprintf(stderr, "WARNING: Continuing without Vulkan (may use software rendering)\n");
+			}
+
+			// Create SDL3 window with Vulkan support
+			fprintf(stderr, "INFO: Creating SDL3 Vulkan window...\n");
+			Uint32 windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;  // Start hidden, show after D3D init
+			TheSDL3Window = SDL_CreateWindow(
+				"Command & Conquer Generals: Zero Hour",
+				1024, 768,  // Default resolution
+				windowFlags
+			);
+
+			if (!TheSDL3Window) {
+				fprintf(stderr, "FATAL: Failed to create SDL3 window: %s\n", SDL_GetError());
+				SDL_Quit();
+				return 1;
+			}
+#endif // __ANDROID__
+
+			// Store window handle globally (cast SDL_Window* to HWND for compatibility)
+			ApplicationHWnd = (HWND)TheSDL3Window;
+			fprintf(stderr, "INFO: SDL3 window created successfully\n");
 		}
 
-		// Set DXVK WSI driver before loading Vulkan
-		setenv("DXVK_WSI_DRIVER", "SDL3", 1);
-
-		// GeneralsX @bugfix BenderAI 06/03/2026 - Exclude LLVMpipe Vulkan ICD before loading Vulkan.
-		// libvulkan_lvp.so crashes during static initialization with LLVM 20.x when the Vulkan
-		// loader enumerates all ICDs. Restrict to hardware ICDs first.
-		FilterSoftwareVulkanICDs();
-		FilterPipeWireOpenAL();
-
-		// Load Vulkan library for DXVK DirectX8→Vulkan translation
-		fprintf(stderr, "INFO: Loading Vulkan library...\n");
-		if (!SDL_Vulkan_LoadLibrary(nullptr)) {
-			fprintf(stderr, "WARNING: Failed to load Vulkan: %s\n", SDL_GetError());
-			fprintf(stderr, "WARNING: Continuing without Vulkan (may use software rendering)\n");
+#if defined(__ANDROID__)
+		// GeneralsX @feature Android data root. The launcher Activity exports the
+		// data dirs (their files/<game> dirs, where the .BIG archives are
+		// adb-pushed). StdBIGFileSystem reads the env vars directly, but most of
+		// the engine's loose-file lookups are relative to CWD with a
+		// case-insensitive fallback, so also chdir() there. Zero Hour mounts two
+		// dirs — CNC_GENERALS_ZH_PATH (ZH .BIGs) + CNC_GENERALS_PATH (base
+		// Generals .BIGs) — so prefer the ZH dir as CWD when present; the base
+		// Generals build only sets CNC_GENERALS_PATH. App-private storage needs no
+		// runtime permission.
+		{
+			const char* zhDir = getenv("CNC_GENERALS_ZH_PATH");
+			const char* baseDir = getenv("CNC_GENERALS_PATH");
+			const char* dataDir = (zhDir && *zhDir) ? zhDir : baseDir;
+			if (dataDir && *dataDir) {
+				if (chdir(dataDir) == 0) {
+					fprintf(stderr, "INFO: Android data dir: chdir(%s)\n", dataDir);
+				} else {
+					fprintf(stderr, "WARNING: chdir(%s) failed; .BIG lookup may fail\n", dataDir);
+				}
+			} else {
+				fprintf(stderr, "WARNING: CNC_GENERALS_PATH unset; engine will search CWD only\n");
+			}
 		}
-
-		// Create SDL3 window with Vulkan support
-		fprintf(stderr, "INFO: Creating SDL3 Vulkan window...\n");
-		Uint32 windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;  // Start hidden, show after D3D init
-		TheSDL3Window = SDL_CreateWindow(
-			"Command & Conquer Generals: Zero Hour",
-			1024, 768,  // Default resolution
-			windowFlags
-		);
-
-		if (!TheSDL3Window) {
-			fprintf(stderr, "FATAL: Failed to create SDL3 window: %s\n", SDL_GetError());
-			SDL_Quit();
-			return 1;
-		}
-
-		// Store window handle globally (cast SDL_Window* to HWND for compatibility)
-		ApplicationHWnd = (HWND)TheSDL3Window;
-		fprintf(stderr, "INFO: SDL3 window created successfully\n");
-		}
+#endif
 
 		// Call cross-platform game entry point
 		exitcode = GameMain();
@@ -334,6 +458,12 @@ int main(int argc, char* argv[])
 	}
 
 	// Cleanup SDL3 resources
+#if defined(__ANDROID__)
+	if (TheSDL3GLContext) {
+		SDL_GL_DestroyContext(TheSDL3GLContext);
+		TheSDL3GLContext = nullptr;
+	}
+#endif
 	if (TheSDL3Window) {
 		SDL_DestroyWindow(TheSDL3Window);
 		TheSDL3Window = nullptr;

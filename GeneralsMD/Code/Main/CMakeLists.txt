@@ -1,9 +1,20 @@
-add_executable(z_generals WIN32)
+# On Android the engine is loaded by SDL's SDLActivity via dlopen(), so it must
+# be a SHARED library (libmain.so) that exports SDL_main, not an executable.
+# Desktop/Windows keep the WIN32 executable. Mirrors Generals/Code/Main.
+if(ANDROID)
+    add_library(z_generals SHARED)
+else()
+    add_executable(z_generals WIN32)
+endif()
 
 # Use a binary name that doesn't conflict with original game.
 # GeneralsX @build BenderAI 15/02/2026 Linux branding update
 if("${CMAKE_SYSTEM}" MATCHES "Windows")
     set_target_properties(z_generals PROPERTIES OUTPUT_NAME "generalszh${RTS_BUILD_OUTPUT_SUFFIX}")
+elseif(ANDROID)
+    # SDLActivity.getMainSharedObject() defaults to "libmain.so"; SDL_main is
+    # resolved from it. Name the artifact accordingly.
+    set_target_properties(z_generals PROPERTIES OUTPUT_NAME main)
 else()
     # GeneralsX @build BenderAI 15/02/2026 Linux branding update
     set_target_properties(z_generals PROPERTIES OUTPUT_NAME GeneralsXZH)
@@ -38,6 +49,11 @@ target_link_libraries(z_generals PRIVATE
 # GeneralsX @build BenderAI 11/02/2026
 if(SAGE_USE_SDL3)
     target_link_libraries(z_generals PRIVATE sdl3lib)
+endif()
+
+# Android: NDK system libs for logging / native activity glue.
+if(ANDROID)
+    target_link_libraries(z_generals PRIVATE log android EGL GLESv3)
 endif()
 
 # TODO Originally referred to build host and user, replace with git info perhaps?

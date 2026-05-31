@@ -508,6 +508,16 @@ static void SDL3_ApplyWindowModeForRenderConfig(Bool windowed, Int renderWidth, 
 	extern SDL_Window* TheSDL3Window;
 	if (!TheSDL3Window) return;
 
+#if defined(__ANDROID__)
+	// On Android SDL already hands us a fullscreen window at the native size, and
+	// the native-resolution lock above sets the render resolution. The desktop
+	// windowed<->fullscreen toggling below is unnecessary here AND deadlocks: on a
+	// portrait device the SDL_SetWindowFullscreen transition blocks the SDL thread
+	// waiting on the Android UI thread, hanging boot before the first frame
+	// (intermittent, orientation-dependent). Skip the whole dance on Android.
+	(void)windowed; (void)renderWidth; (void)renderHeight;
+	return;
+#else
 	if (!windowed) {
 		if (!SDL_SetWindowFullscreen(TheSDL3Window, false)) {
 			fprintf(stderr, "WARNING: SDL_SetWindowFullscreen(false) failed: %s\n", SDL_GetError());
@@ -536,6 +546,7 @@ static void SDL3_ApplyWindowModeForRenderConfig(Bool windowed, Int renderWidth, 
 		}
 		SDL3_EnsureNativeFullscreen(TheSDL3Window);
 	}
+#endif // !__ANDROID__
 }
 #endif
 
