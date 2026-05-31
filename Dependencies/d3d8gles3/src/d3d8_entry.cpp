@@ -427,7 +427,59 @@ public:
         *o = new (std::nothrow) Surface8(this, w, h, fmt);
         return *o ? S_OK : E_OUTOFMEMORY;
     }
-    HRESULT STDMETHODCALLTYPE CopyRects(IDirect3DSurface8*, const RECT*, UINT, IDirect3DSurface8*, const POINT*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE CopyRects(IDirect3DSurface8* srcS, const RECT* srcRects, UINT n,
+                                        IDirect3DSurface8* dstS, const POINT* dstPts) override {
+        // WW3D2 builds its font glyph atlases by blitting into a CPU image surface
+        // and then CopyRects()-ing it into a texture's surface level
+        // (Render2DSentenceClass::Build_Textures). With this stubbed to a no-op the
+        // glyph textures stayed empty, so every UI label rendered as a blank box.
+        // Implement the CPU surface->surface copy; the dest texture-view's
+        // UnlockRect then uploads the result to GL (with the A4R4G4B4 expand).
+        // The engine only issues whole-surface copies (n==0, null rects); honour
+        // explicit rects too for safety.
+        if (!srcS || !dstS) return D3DERR_INVALIDCALL;
+        Surface8* src = static_cast<Surface8*>(srcS);
+        Surface8* dst = static_cast<Surface8*>(dstS);
+        D3DSURFACE_DESC sd, dd;
+        src->GetDesc(&sd);
+        dst->GetDesc(&dd);
+
+        D3DLOCKED_RECT slr, dlr;
+        if (FAILED(src->LockRect(&slr, nullptr, D3DLOCK_READONLY))) return D3DERR_INVALIDCALL;
+        if (FAILED(dst->LockRect(&dlr, nullptr, 0))) { src->UnlockRect(); return D3DERR_INVALIDCALL; }
+
+        // Both surfaces share one logical format, so derive bytes-per-pixel from the
+        // dest texture's tightly-packed pitch (pitch == width*bpp). The source may
+        // carry extra row padding — copy by each surface's own reported pitch.
+        const UINT bpp = (dlr.Pitch > 0 && dd.Width > 0)
+                       ? static_cast<UINT>(dlr.Pitch) / dd.Width : 4u;
+        const UINT count = (srcRects && n) ? n : 1u;
+        for (UINT i = 0; i < count; ++i) {
+            RECT sr = { 0, 0, static_cast<LONG>(sd.Width), static_cast<LONG>(sd.Height) };
+            if (srcRects && n) sr = srcRects[i];
+            POINT dp = { sr.left, sr.top };
+            if (dstPts && n) dp = dstPts[i];
+
+            LONG rw = sr.right - sr.left;
+            LONG rh = sr.bottom - sr.top;
+            if (dp.x + rw > static_cast<LONG>(dd.Width))  rw = static_cast<LONG>(dd.Width)  - dp.x;
+            if (dp.y + rh > static_cast<LONG>(dd.Height)) rh = static_cast<LONG>(dd.Height) - dp.y;
+            if (rw <= 0 || rh <= 0) continue;
+
+            const uint8_t* sBase = static_cast<const uint8_t*>(slr.pBits)
+                                 + static_cast<size_t>(sr.top) * slr.Pitch + static_cast<size_t>(sr.left) * bpp;
+            uint8_t* dBase = static_cast<uint8_t*>(dlr.pBits)
+                           + static_cast<size_t>(dp.y) * dlr.Pitch + static_cast<size_t>(dp.x) * bpp;
+            const size_t rowBytes = static_cast<size_t>(rw) * bpp;
+            for (LONG y = 0; y < rh; ++y)
+                std::memcpy(dBase + static_cast<size_t>(y) * dlr.Pitch,
+                            sBase + static_cast<size_t>(y) * slr.Pitch, rowBytes);
+        }
+
+        dst->UnlockRect();   // uploads the populated level to GL
+        src->UnlockRect();
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE UpdateTexture(IDirect3DBaseTexture8*, IDirect3DBaseTexture8*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetFrontBuffer(IDirect3DSurface8*) override { return D3DERR_INVALIDCALL; }
     HRESULT STDMETHODCALLTYPE SetRenderTarget(IDirect3DSurface8* rt, IDirect3DSurface8*) override {
