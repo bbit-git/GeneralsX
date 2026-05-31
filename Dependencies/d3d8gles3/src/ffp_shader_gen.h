@@ -73,6 +73,7 @@ struct FFPProgram {
 
     // transforms
     GLint  uWorld = -1, uView = -1, uProj = -1;
+    GLint  uViewport = -1;         // (x,y,w,h) of the active viewport, for XYZRHW
     GLint  uTexMatrix[kMaxStages];
 
     // material / global

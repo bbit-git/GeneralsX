@@ -123,6 +123,9 @@ private:
     FFPShaderCache ffpCache_;
     bool   s3tcSupported_ = false;
     int    bbW_ = 0, bbH_ = 0;
+    // Active viewport rect in D3D pixel coords (top-left origin), tracked for the
+    // XYZRHW screen->clip conversion. Defaults to the full backbuffer.
+    int    vpX_ = 0, vpY_ = 0, vpW_ = 0, vpH_ = 0;
     bool   initialized_ = false;
 };
 

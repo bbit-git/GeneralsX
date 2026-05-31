@@ -52,13 +52,20 @@ static inline void U8x4FromARGB(uint32_t c, float out[4]) {
 // ============================================================================
 bool GLES3Device::Init(int w, int h) {
     bbW_ = w; bbH_ = h;
+    vpX_ = 0; vpY_ = 0; vpW_ = w; vpH_ = h;
     glGenVertexArrays(1, &vao_);
     // S3TC availability decides DXT upload vs CPU decompress (resources layer).
     const char* exts = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
     s3tcSupported_ = exts && std::strstr(exts, "GL_EXT_texture_compression_s3tc");
-    // D3D's default winding: clockwise == front under its left-handed projection.
-    // The engine flips the projection for GL conventions, so front-face is CW here.
-    glFrontFace(GL_CW);
+    // Front-face winding. The engine uploads the raw D3D projection (no clip-space
+    // Y flip), and SetViewport() flips only the viewport *rectangle*, not the image.
+    // D3D and GL determine facing in window space with opposite Y directions, so the
+    // same triangle that D3D treats as front-facing reads as CCW in GL's bottom-left
+    // window space. GL's default front is already GL_CCW — matching D3D — so leaving
+    // it as CW would invert every cull, hiding the single-sided terrain (its up-faces
+    // get culled) and exposing the back/inside faces of closed meshes (the whole
+    // scene appeared to render "from inside"). MapCull() is paired with this winding.
+    glFrontFace(GL_CCW);
     initialized_ = true;
     return true;
 }
@@ -119,6 +126,9 @@ void GLES3Device::Present()    {
 }
 
 void GLES3Device::SetViewport(int x, int y, int w, int h, float, float) {
+    // Remember the D3D viewport rect (top-left origin) for the XYZRHW screen->clip
+    // conversion in the FFP vertex shader (uViewport).
+    vpX_ = x; vpY_ = y; vpW_ = w; vpH_ = h;
     // D3D viewport origin is top-left; GL is bottom-left. Flip Y.
     glViewport(x, bbH_ - (y + h), w, h);
 }
@@ -274,6 +284,10 @@ void GLES3Device::ApplyFixedFunctionUniforms(const FFPProgram& prog) {
     if (prog.uWorld >= 0) glUniformMatrix4fv(prog.uWorld, 1, GL_FALSE, world_.m);
     if (prog.uView  >= 0) glUniformMatrix4fv(prog.uView,  1, GL_FALSE, view_.m);
     if (prog.uProj  >= 0) glUniformMatrix4fv(prog.uProj,  1, GL_FALSE, proj_.m);
+    if (prog.uViewport >= 0) {
+        float vp[4] = { (float)vpX_, (float)vpY_, (float)vpW_, (float)vpH_ };
+        glUniform4fv(prog.uViewport, 1, vp);
+    }
 
     if (prog.uMaterialAmbient  >= 0) glUniform4fv(prog.uMaterialAmbient,  1, matAmbient_);
     if (prog.uMaterialDiffuse  >= 0) glUniform4fv(prog.uMaterialDiffuse,  1, matDiffuse_);

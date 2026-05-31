@@ -58,6 +58,7 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
         s += "layout(location=" + std::to_string(4+i) + ") in vec2 aTex" + std::to_string(i) + ";\n";
 
     s += "uniform mat4 uWorld;\nuniform mat4 uView;\nuniform mat4 uProj;\n";
+    if (k.isPretransformed) s += "uniform vec4 uViewport;\n"; // (x,y,w,h) in pixels
 
     // varyings
     s += "out vec4 vColor;\nout vec4 vSpecular;\n";
@@ -87,10 +88,17 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
     s += "  vec4 inSpecular = " + std::string(k.hasSpecular ? "aSpecular.bgra" : "vec4(0.0)") + ";\n";
 
     if (k.isPretransformed) {
-        // XYZRHW: aPos is already in screen space with 1/w in .w. The engine
-        // pre-divides; we pass straight to clip space. (Viewport mapping done by
-        // the device via glViewport; here we assume normalised input.)
-        s += "  gl_Position = vec4(aPos.xyz, 1.0);\n";
+        // XYZRHW: aPos.xy are in render-target *pixel* coordinates (D3D screen
+        // space, origin top-left, y down) and aPos.z is depth in [0,1]; .w is 1/w.
+        // D3D's viewport transform would map these to the framebuffer for us, but
+        // GLES3 has no fixed-function viewport stage, so do it here: convert pixels
+        // to clip space against the active viewport rect, flip Y for GL's bottom-
+        // left origin, and remap depth [0,1] -> GL NDC [-1,1]. Without this the raw
+        // pixel coords (e.g. 400,300) are treated as clip coords and every 2D UI
+        // quad lands far outside [-1,1] and is clipped away (invisible menus).
+        s += "  float _ndcx = (aPos.x - uViewport.x) / uViewport.z * 2.0 - 1.0;\n";
+        s += "  float _ndcy = 1.0 - (aPos.y - uViewport.y) / uViewport.w * 2.0;\n";
+        s += "  gl_Position = vec4(_ndcx, _ndcy, aPos.z * 2.0 - 1.0, 1.0);\n";
         s += "  vColor = inDiffuse;\n";
         s += "  vSpecular = inSpecular;\n";
     } else {
@@ -320,6 +328,7 @@ const FFPProgram* FFPShaderCache::GetProgram(const FFPKey& key) {
     fp.uWorld = glGetUniformLocation(prog, "uWorld");
     fp.uView  = glGetUniformLocation(prog, "uView");
     fp.uProj  = glGetUniformLocation(prog, "uProj");
+    fp.uViewport = glGetUniformLocation(prog, "uViewport");
     fp.uMaterialAmbient  = glGetUniformLocation(prog, "uMaterialAmbient");
     fp.uMaterialDiffuse  = glGetUniformLocation(prog, "uMaterialDiffuse");
     fp.uMaterialEmissive = glGetUniformLocation(prog, "uMaterialEmissive");
