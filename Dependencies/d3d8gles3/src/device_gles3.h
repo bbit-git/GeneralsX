@@ -81,8 +81,8 @@ private:
     FFPKey BuildFFPKey() const;
     void   ApplyFixedFunctionUniforms(const FFPProgram& prog);
     void   ApplyBlendDepthStencilCull();
-    void   BindVertexAttributes();            // bind stream VB/IB then attributes
-    void   SetupVertexAttributes(int stride); // FVF -> attrib pointers (buffer pre-bound)
+    void   BindVertexAttributes(uintptr_t baseByteOffset = 0); // bind stream VB/IB then attributes
+    void   SetupVertexAttributes(int stride, uintptr_t baseByteOffset = 0); // FVF -> attrib pointers (buffer pre-bound)
     void   EnsureUPBuffers();                 // lazily create the transient UP VBO/IBO
 
     // ---- presentation ----

@@ -373,20 +373,24 @@ static uint32_t TexCoordSize(uint32_t fvf, int set) {
     switch (bits) { case 1: return 3; case 2: return 4; case 3: return 1; default: return 2; }
 }
 
-void GLES3Device::BindVertexAttributes() {
+void GLES3Device::BindVertexAttributes(uintptr_t baseByteOffset) {
     if (!streamVB_[0]) return;
     streamVB_[0]->BindAs(GL_ARRAY_BUFFER);
     if (indexBuffer_) indexBuffer_->BindAs(GL_ELEMENT_ARRAY_BUFFER);
-    SetupVertexAttributes(static_cast<int>(streamStride_[0]));
+    SetupVertexAttributes(static_cast<int>(streamStride_[0]), baseByteOffset);
 }
 
 // Configure the FVF-derived vertex attribute pointers against whatever buffer is
 // currently bound to GL_ARRAY_BUFFER (the stream VB for indexed/array draws, or
 // the transient UP VBO for user-pointer draws). `stride` is the vertex size.
-void GLES3Device::SetupVertexAttributes(int strideIn) {
+void GLES3Device::SetupVertexAttributes(int strideIn, uintptr_t baseByteOffset) {
     const GLsizei stride = static_cast<GLsizei>(strideIn);
     const uint32_t fvf = fvf_;
-    uintptr_t off = 0;
+    // baseByteOffset folds D3D's BaseVertexIndex (SetIndices) into the attribute
+    // pointers: GLES3 core has no glDrawElementsBaseVertex, so we shift every
+    // attribute's start by baseVertexIndex*stride. The per-vertex field offsets
+    // then accumulate on top of it. Zero for non-indexed / user-pointer draws.
+    uintptr_t off = baseByteOffset;
     auto attrib = [&](GLuint loc, GLint size, GLenum type, GLboolean norm, uint32_t bytes) {
         glEnableVertexAttribArray(loc);
         glVertexAttribPointer(loc, size, type, norm, stride,
@@ -445,7 +449,9 @@ bool GLES3Device::ApplyStateCommon() {
 
 void GLES3Device::ApplyState(uint32_t /*primType*/) {
     if (!ApplyStateCommon()) return;
-    BindVertexAttributes();
+    // Indexed draws honour D3D's BaseVertexIndex (set via SetIndices) by shifting
+    // the attribute pointers; the indices themselves stay 0-based off that base.
+    BindVertexAttributes(static_cast<uintptr_t>(baseVertexIndex_) * streamStride_[0]);
 }
 
 void GLES3Device::DrawIndexedPrimitive(uint32_t primType, uint32_t /*minIndex*/,
@@ -459,9 +465,9 @@ void GLES3Device::DrawIndexedPrimitive(uint32_t primType, uint32_t /*minIndex*/,
     const GLenum idxType = indexBuffer_->Is32Bit() ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
     const size_t idxSize = indexBuffer_->Is32Bit() ? 4 : 2;
 
-    // baseVertexIndex offset is folded into the index buffer bind on D3D8; GLES3
-    // has no glDrawElementsBaseVertex in core, so the engine's base offset is
-    // applied when the index data is uploaded (resources layer).
+    // D3D's BaseVertexIndex is applied via the attribute-pointer shift in
+    // ApplyState/SetupVertexAttributes (GLES3 core has no glDrawElementsBaseVertex);
+    // here only the startIndex selects where in the index buffer to begin.
     const void* offset = reinterpret_cast<const void*>(static_cast<uintptr_t>(startIndex * idxSize));
     glDrawElements(mode, static_cast<GLsizei>(indexCount), idxType, offset);
     ++g_dbgDrawIdx;
