@@ -164,9 +164,13 @@ bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
         glTexStorage2D(GL_TEXTURE_2D, static_cast<GLsizei>(levels_), fmt.internalFormat,
                        static_cast<GLsizei>(w), static_cast<GLsizei>(h));
         if (needsSwizzle_) {
-            // GLES3 supports per-texture swizzle: present D3D BGRA as RGBA.
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
+            // GLES3 per-texture swizzle: remap GL's unpacked channels to D3D RGBA.
+            // The mask is format-specific (BGRA byte-swap for 8888, channel rotation
+            // for the packed 16-bit ARGB formats) — see MapTextureFormat.
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, static_cast<GLint>(fmt.swizzle[0]));
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, static_cast<GLint>(fmt.swizzle[1]));
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, static_cast<GLint>(fmt.swizzle[2]));
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, static_cast<GLint>(fmt.swizzle[3]));
         }
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,

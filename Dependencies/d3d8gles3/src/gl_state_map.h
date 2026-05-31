@@ -52,7 +52,8 @@ struct GLTexFormat {
     GLenum format;
     GLenum type;
     bool   compressed;
-    bool   needsBGRASwizzle;   // D3D stores ARGB/XRGB; we upload as RGBA and swizzle
+    bool   needsBGRASwizzle;   // apply swizzle[] below to remap GL channels -> D3D RGBA
+    GLenum swizzle[4];         // GL_TEXTURE_SWIZZLE_{R,G,B,A} sources (when needsBGRASwizzle)
     bool   supported;
 };
 GLTexFormat MapTextureFormat(uint32_t d3dFormat);

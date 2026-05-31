@@ -165,22 +165,37 @@ enum {
 GLTexFormat MapTextureFormat(uint32_t fmt) {
     GLTexFormat t{};
     t.supported = true;
+    // Identity swizzle by default (only used when needsBGRASwizzle is set).
+    t.swizzle[0] = GL_RED; t.swizzle[1] = GL_GREEN; t.swizzle[2] = GL_BLUE; t.swizzle[3] = GL_ALPHA;
     switch (fmt) {
         case D3DFMT_A8R8G8B8:
         case D3DFMT_X8R8G8B8:
+            // D3D byte order is BGRA in memory; swap R<->B. X8 has no alpha -> force 1.
             t.internalFormat = GL_RGBA8; t.format = GL_RGBA; t.type = GL_UNSIGNED_BYTE;
-            t.needsBGRASwizzle = true; break;
+            t.needsBGRASwizzle = true;
+            t.swizzle[0] = GL_BLUE; t.swizzle[2] = GL_RED;
+            if (fmt == D3DFMT_X8R8G8B8) t.swizzle[3] = GL_ONE; break;
         case D3DFMT_R8G8B8:
             t.internalFormat = GL_RGB8; t.format = GL_RGB; t.type = GL_UNSIGNED_BYTE;
-            t.needsBGRASwizzle = true; break;
+            t.needsBGRASwizzle = true;
+            t.swizzle[0] = GL_BLUE; t.swizzle[2] = GL_RED; break;
         case D3DFMT_R5G6B5:
+            // GL 5_6_5 packing matches D3D R5G6B5 exactly; no swizzle.
             t.internalFormat = GL_RGB565; t.format = GL_RGB; t.type = GL_UNSIGNED_SHORT_5_6_5; break;
         case D3DFMT_A1R5G5B5:
+            // NOTE: GL 5_5_5_1 puts the 1-bit alpha at the LSB while D3D A1R5G5B5 puts
+            // it at the MSB, so the bit fields don't line up and a channel swizzle can't
+            // fully correct it (would need CPU expansion to RGBA8). Left as the legacy
+            // R<->B approximation; revisit if a 1555 texture shows wrong colors.
             t.internalFormat = GL_RGB5_A1; t.format = GL_RGBA; t.type = GL_UNSIGNED_SHORT_5_5_5_1;
-            t.needsBGRASwizzle = true; break;
+            t.needsBGRASwizzle = true;
+            t.swizzle[0] = GL_BLUE; t.swizzle[2] = GL_RED; break;
         case D3DFMT_A4R4G4B4:
+            // GL 4_4_4_4 reads the word as R4 G4 B4 A4 (MSB->LSB); D3D A4R4G4B4 is
+            // A4 R4 G4 B4. So GL.{R,G,B,A} = D3D.{A,R,G,B}: rotate to recover RGBA.
             t.internalFormat = GL_RGBA4; t.format = GL_RGBA; t.type = GL_UNSIGNED_SHORT_4_4_4_4;
-            t.needsBGRASwizzle = true; break;
+            t.needsBGRASwizzle = true;
+            t.swizzle[0] = GL_GREEN; t.swizzle[1] = GL_BLUE; t.swizzle[2] = GL_ALPHA; t.swizzle[3] = GL_RED; break;
         case D3DFMT_L8:
             t.internalFormat = GL_R8; t.format = GL_RED; t.type = GL_UNSIGNED_BYTE; break;
         case D3DFMT_A8:
