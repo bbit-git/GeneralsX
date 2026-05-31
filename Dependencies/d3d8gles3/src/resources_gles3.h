@@ -44,7 +44,7 @@ private:
 class GLTexture {
 public:
     bool Create(uint32_t width, uint32_t height, uint32_t levels,
-                uint32_t d3dFormat, bool s3tcSupported);
+                uint32_t d3dFormat, bool s3tcSupported, bool renderTarget = false);
     void Destroy();
 
     // D3D8 IDirect3DTexture8::LockRect — returns a pointer + pitch into a CPU
@@ -57,6 +57,8 @@ public:
 
     uint32_t Width()  const { return width_; }
     uint32_t Height() const { return height_; }
+    GLuint   GlName() const { return glTexture_; }     // for FBO attachment
+    bool     IsRenderTarget() const { return isRenderTarget_; }
 
 private:
     struct Level { uint32_t w=0, h=0, pitch=0; std::vector<uint8_t> staging; };
@@ -67,6 +69,7 @@ private:
     bool     needsSwizzle_ = false;
     bool     decompressOnUpload_ = false;  // DXT but no S3TC ext
     bool     expand1555_ = false;          // D3D A1R5G5B5 -> RGBA8 on upload
+    bool     isRenderTarget_ = false;      // D3DUSAGE_RENDERTARGET: FBO-backed
     std::vector<Level> levelData_;
 };
 

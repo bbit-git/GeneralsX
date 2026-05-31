@@ -33,7 +33,8 @@ enum {
 // D3DTSS
 enum {
     TSS_COLOROP=1, TSS_COLORARG1=2, TSS_COLORARG2=3, TSS_ALPHAOP=4,
-    TSS_ALPHAARG1=5, TSS_ALPHAARG2=6, TSS_TEXCOORDINDEX=11
+    TSS_ALPHAARG1=5, TSS_ALPHAARG2=6, TSS_TEXCOORDINDEX=11,
+    TSS_TEXTURETRANSFORMFLAGS=24
 };
 // D3DTRANSFORMSTATETYPE
 enum { TS_VIEW=2, TS_PROJECTION=3, TS_WORLD=256 };
@@ -53,6 +54,11 @@ static inline void U8x4FromARGB(uint32_t c, float out[4]) {
 bool GLES3Device::Init(int w, int h) {
     bbW_ = w; bbH_ = h;
     vpX_ = 0; vpY_ = 0; vpW_ = w; vpH_ = h;
+    curTargetH_ = h;
+    // SDL's GL backbuffer is not guaranteed to be FBO 0 (Android may give us an
+    // FBO-backed window surface). Capture whatever is bound now as the target to
+    // restore when render-to-texture finishes.
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFbo_);
     glGenVertexArrays(1, &vao_);
     // S3TC availability decides DXT upload vs CPU decompress (resources layer).
     const char* exts = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
@@ -87,6 +93,8 @@ void GLES3Device::Shutdown() {
     if (vao_)   { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
     if (upVBO_) { glDeleteBuffers(1, &upVBO_); upVBO_ = 0; }
     if (upIBO_) { glDeleteBuffers(1, &upIBO_); upIBO_ = 0; }
+    if (rtFBO_) { glDeleteFramebuffers(1, &rtFBO_); rtFBO_ = 0; }
+    if (rtDepthRB_) { glDeleteRenderbuffers(1, &rtDepthRB_); rtDepthRB_ = 0; }
     initialized_ = false;
 }
 
@@ -94,6 +102,7 @@ void GLES3Device::OnContextLost() {
     ffpCache_.Clear();
     vao_ = 0;
     upVBO_ = 0; upIBO_ = 0;   // GL objects are gone with the context
+    rtFBO_ = 0; rtDepthRB_ = 0; rtDepthW_ = 0; rtDepthH_ = 0;
 }
 
 void GLES3Device::EnsureUPBuffers() {
@@ -141,8 +150,41 @@ void GLES3Device::SetViewport(int x, int y, int w, int h, float, float) {
     // Remember the D3D viewport rect (top-left origin) for the XYZRHW screen->clip
     // conversion in the FFP vertex shader (uViewport).
     vpX_ = x; vpY_ = y; vpW_ = w; vpH_ = h;
-    // D3D viewport origin is top-left; GL is bottom-left. Flip Y.
-    glViewport(x, bbH_ - (y + h), w, h);
+    // D3D viewport origin is top-left; GL is bottom-left. Flip Y against the bound
+    // target's height (the backbuffer normally, or the render-target when one is
+    // bound) — not always the backbuffer, or RT draws land off-screen.
+    glViewport(x, curTargetH_ - (y + h), w, h);
+}
+
+void GLES3Device::SetRenderTarget(GLTexture* color) {
+    if (!color) {
+        // Restore the window framebuffer + full-backbuffer viewport.
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(defaultFbo_));
+        curTargetH_ = bbH_;
+        SetViewport(0, 0, bbW_, bbH_, 0.0f, 1.0f);
+        return;
+    }
+
+    if (!rtFBO_) glGenFramebuffers(1, &rtFBO_);
+    glBindFramebuffer(GL_FRAMEBUFFER, rtFBO_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           color->GlName(), 0);
+
+    // Shadow casters are rendered with depth testing, so the FBO needs a depth
+    // buffer. Reuse one renderbuffer, growing it when a larger target appears.
+    const int w = static_cast<int>(color->Width());
+    const int h = static_cast<int>(color->Height());
+    if (!rtDepthRB_ || w > rtDepthW_ || h > rtDepthH_) {
+        if (!rtDepthRB_) glGenRenderbuffers(1, &rtDepthRB_);
+        glBindRenderbuffer(GL_RENDERBUFFER, rtDepthRB_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        rtDepthW_ = w; rtDepthH_ = h;
+    }
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rtDepthRB_);
+
+    curTargetH_ = h;
+    SetViewport(0, 0, w, h, 0.0f, 1.0f);
 }
 
 // ---- deferred state --------------------------------------------------------
@@ -156,6 +198,9 @@ void GLES3Device::SetTransform(uint32_t t, const float* m) {
     if (t == TS_WORLD)           std::memcpy(world_.m, m, sizeof(float)*16);
     else if (t == TS_VIEW)       std::memcpy(view_.m, m, sizeof(float)*16);
     else if (t == TS_PROJECTION) std::memcpy(proj_.m, m, sizeof(float)*16);
+    // D3DTS_TEXTURE0..7 == 16..23: per-stage texture-coordinate transform used by
+    // the projected-shadow texgen path.
+    else if (t >= 16 && t < 16 + kMaxStages) std::memcpy(texMatrix_[t-16].m, m, sizeof(float)*16);
 }
 void GLES3Device::SetTexture(uint32_t stage, GLTexture* tex) {
     if (stage < kMaxStages) boundTex_[stage] = tex;
@@ -243,7 +288,15 @@ FFPKey GLES3Device::BuildFFPKey() const {
         s.alphaOp   = static_cast<uint8_t>(stageStates_[i][TSS_ALPHAOP] ? stageStates_[i][TSS_ALPHAOP] : 1);
         s.alphaArg1 = static_cast<uint8_t>(stageStates_[i][TSS_ALPHAARG1] ? stageStates_[i][TSS_ALPHAARG1] : 2);
         s.alphaArg2 = static_cast<uint8_t>(stageStates_[i][TSS_ALPHAARG2] ? stageStates_[i][TSS_ALPHAARG2] : 1);
-        s.texCoordIndex = static_cast<uint8_t>(stageStates_[i][TSS_TEXCOORDINDEX] & 0xFF);
+        const uint32_t tci = stageStates_[i][TSS_TEXCOORDINDEX];
+        s.texCoordIndex = static_cast<uint8_t>(tci & 0xFF);
+        // High word selects fixed-function texcoord generation (D3DTSS_TCI_*):
+        // 0 passthru, 1 camera-space normal, 2 camera-space position (projected
+        // shadows), 3 camera-space reflection.
+        s.texGen = static_cast<uint8_t>((tci >> 16) & 0xFF);
+        // D3DTTFF_* low bits are the output coord count; non-zero means run the
+        // coords through the stage's texture-transform matrix.
+        s.texXform = static_cast<uint8_t>(stageStates_[i][TSS_TEXTURETRANSFORMFLAGS] & 0x7);
         s.textureBound  = boundTex_[i] ? 1 : 0;
     }
     return k;
@@ -300,6 +353,11 @@ void GLES3Device::ApplyFixedFunctionUniforms(const FFPProgram& prog) {
         float vp[4] = { (float)vpX_, (float)vpY_, (float)vpW_, (float)vpH_ };
         glUniform4fv(prog.uViewport, 1, vp);
     }
+    // Per-stage texture-transform matrices (only the stages whose shader declared
+    // one resolve to a valid location).
+    for (int i = 0; i < kMaxStages; ++i)
+        if (prog.uTexMatrix[i] >= 0)
+            glUniformMatrix4fv(prog.uTexMatrix[i], 1, GL_FALSE, texMatrix_[i].m);
 
     if (prog.uMaterialAmbient  >= 0) glUniform4fv(prog.uMaterialAmbient,  1, matAmbient_);
     if (prog.uMaterialDiffuse  >= 0) glUniform4fv(prog.uMaterialDiffuse,  1, matDiffuse_);
@@ -439,6 +497,10 @@ bool GLES3Device::ApplyStateCommon() {
         if (boundTex_[i] && prog->uSampler[i] >= 0) {
             glActiveTexture(GL_TEXTURE0 + i);
             boundTex_[i]->Bind();
+            // Apply the stage's D3D sampler state (wrap/filter). Without this every
+            // texture keeps GL's default GL_REPEAT, which tiles clamp-addressed art
+            // such as the projected shadow decals into dark streaks.
+            boundTex_[i]->ApplySamplerState(stageStates_[i]);
             glUniform1i(prog->uSampler[i], i);
         }
     }

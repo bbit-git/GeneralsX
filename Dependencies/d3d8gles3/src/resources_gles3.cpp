@@ -147,25 +147,30 @@ static uint32_t BytesPerPixel(const GLTexFormat& f) {
 }
 
 bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
-                       uint32_t d3dFormat, bool s3tcSupported) {
+                       uint32_t d3dFormat, bool s3tcSupported, bool renderTarget) {
     width_ = w; height_ = h; levels_ = levels ? levels : 1; d3dFormat_ = d3dFormat;
+    isRenderTarget_ = renderTarget;
 
     GLTexFormat fmt = MapTextureFormat(d3dFormat);
     compressed_   = fmt.compressed;
-    needsSwizzle_ = fmt.needsBGRASwizzle;
+    // A render target is filled by GL itself (native RGBA order), so it needs no
+    // D3D-channel swizzle — leave it identity even for A8R8G8B8.
+    needsSwizzle_ = fmt.needsBGRASwizzle && !renderTarget;
     decompressOnUpload_ = compressed_ && !s3tcSupported;
     // GLES3 has no packed type matching D3D A1R5G5B5 (its 1-bit alpha is at the
     // word's MSB, GL's UNSIGNED_SHORT_5_5_5_1 puts it at the LSB), so the bit
     // fields don't line up and a channel swizzle can't fix it. Expand to RGBA8.
-    expand1555_ = (d3dFormat == 25 /*D3DFMT_A1R5G5B5*/);
+    expand1555_ = (d3dFormat == 25 /*D3DFMT_A1R5G5B5*/) && !renderTarget;
 
     glGenTextures(1, &glTexture_);
     glBindTexture(GL_TEXTURE_2D, glTexture_);
 
-    // Allocate immutable-ish storage for the uncompressed path; compressed and
-    // CPU-decompressed paths upload per level in UnlockRect.
-    if (!compressed_ && !expand1555_ && fmt.supported) {
-        glTexStorage2D(GL_TEXTURE_2D, static_cast<GLsizei>(levels_), fmt.internalFormat,
+    // Render targets always need real, immediately-renderable RGBA8 storage (they
+    // are never Lock/Unlock-uploaded); force the storage path for them.
+    const bool storage = renderTarget || (!compressed_ && !expand1555_ && fmt.supported);
+    if (storage) {
+        const GLenum internalFmt = renderTarget ? GL_RGBA8 : fmt.internalFormat;
+        glTexStorage2D(GL_TEXTURE_2D, static_cast<GLsizei>(levels_), internalFmt,
                        static_cast<GLsizei>(w), static_cast<GLsizei>(h));
         if (needsSwizzle_) {
             // GLES3 per-texture swizzle: remap GL's unpacked channels to D3D RGBA.
@@ -180,6 +185,12 @@ bool GLTexture::Create(uint32_t w, uint32_t h, uint32_t levels,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
                     levels_ > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (renderTarget) {
+        // Projected-shadow targets sample outside [0,1] at the projection edges;
+        // clamp so the silhouette doesn't tile across the receiver.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
 
     levelData_.resize(levels_);
     uint32_t lw = w, lh = h;
@@ -264,8 +275,12 @@ void GLTexture::ApplySamplerState(uint32_t* tss) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, MapTextureAddress(tss[13] ? tss[13] : 1));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, MapTextureAddress(tss[14] ? tss[14] : 1));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, MapMagFilter(tss[16] ? tss[16] : 2));
+    // With only one level a mipmap min-filter makes the texture incomplete (samples
+    // black). Force the mip mode off so a stray D3DTSS_MIPFILTER can't blank a
+    // non-mipped texture.
+    const uint32_t mipF = (levels_ > 1) ? tss[18] : 0;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                    MapMinFilter(tss[17] ? tss[17] : 2, tss[18]));
+                    MapMinFilter(tss[17] ? tss[17] : 2, mipF));
 }
 
 } // namespace d3d8gles3

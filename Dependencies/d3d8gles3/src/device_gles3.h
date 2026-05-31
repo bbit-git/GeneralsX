@@ -37,6 +37,11 @@ public:
     void Present();         // SDL_GL_SwapWindow on the bound window (set via SetSwapWindow)
     void SetViewport(int x, int y, int w, int h, float minZ, float maxZ);
 
+    // Render-to-texture. `color` null restores the default (window) framebuffer;
+    // otherwise binds an FBO with that texture as the colour attachment plus an
+    // internally-managed depth buffer. Used by the projected-shadow system.
+    void SetRenderTarget(GLTexture* color);
+
     // The SDL window whose GL context the device renders into. Passed down from
     // the D3D8 CreateDevice HWND (which is the SDL_Window* on the SDL3 ports).
     // Present() flips this window; if null, Present() is a no-op (host tests).
@@ -95,6 +100,7 @@ private:
     GLTexture* boundTex_[kMaxStages] = {};
 
     Mat4 world_{}, view_{}, proj_{};
+    Mat4 texMatrix_[kMaxStages]{};   // D3DTS_TEXTURE0..7 (texgen / projected coords)
     uint32_t fvf_ = 0;
     uint32_t tFactor_ = 0xFFFFFFFF;
 
@@ -120,6 +126,16 @@ private:
 
     GLuint vao_ = 0;             // single VAO reconfigured per draw
     GLuint upVBO_ = 0, upIBO_ = 0; // transient buffers for user-pointer (UP) draws
+
+    // Render-to-texture (projected shadows). One reused FBO; the depth renderbuffer
+    // is recreated when a larger target is bound. defaultFbo_ is whatever was bound
+    // at Init (SDL's window framebuffer — not necessarily 0). curTargetH_ is the
+    // bound target's height, used by SetViewport for the D3D->GL Y flip.
+    GLuint rtFBO_ = 0;
+    GLuint rtDepthRB_ = 0;
+    int    rtDepthW_ = 0, rtDepthH_ = 0;
+    GLint  defaultFbo_ = 0;
+    int    curTargetH_ = 0;
     FFPShaderCache ffpCache_;
     bool   s3tcSupported_ = false;
     int    bbW_ = 0, bbH_ = 0;

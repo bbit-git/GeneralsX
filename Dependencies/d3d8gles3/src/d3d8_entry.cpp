@@ -139,8 +139,11 @@ private:
 // ---------------------------------------------------------------------------
 class Texture8 final : public Unknown<IDirect3DTexture8> {
 public:
-    Texture8(Device8* dev, UINT w, UINT h, UINT levels, D3DFORMAT fmt, bool s3tc)
-        : dev_(dev), fmt_(fmt) { tex_.Create(w, h, levels ? levels : 1, fmt, s3tc); }
+    Texture8(Device8* dev, UINT w, UINT h, UINT levels, D3DFORMAT fmt, bool s3tc,
+             bool renderTarget = false)
+        : dev_(dev), fmt_(fmt) {
+        tex_.Create(w, h, levels ? levels : 1, fmt, s3tc, renderTarget);
+    }
     ~Texture8() override { tex_.Destroy(); }
     GLTexture* Gl() { return &tex_; }
 
@@ -231,6 +234,10 @@ public:
     HRESULT STDMETHODCALLTYPE UnlockRect() override {
         return (tex_) ? tex_->UnlockRect(level_) : S_OK;
     }
+    // The GL texture this surface is a view onto, if any. Standalone surfaces
+    // (back buffer / default render target) have none and return null, which the
+    // device reads as "the window framebuffer."
+    GLTexture* OwningGlTexture() const { return tex_ ? tex_->Gl() : nullptr; }
 private:
     Device8*  dev_   = nullptr;
     Texture8* tex_   = nullptr;
@@ -342,9 +349,10 @@ public:
         *out = new (std::nothrow) IndexBuffer8(this, len, fmt, (usage & D3DUSAGE_DYNAMIC) != 0);
         return *out ? S_OK : E_OUTOFMEMORY;
     }
-    HRESULT STDMETHODCALLTYPE CreateTexture(UINT w, UINT h, UINT levels, DWORD, D3DFORMAT fmt,
+    HRESULT STDMETHODCALLTYPE CreateTexture(UINT w, UINT h, UINT levels, DWORD usage, D3DFORMAT fmt,
                                             D3DPOOL, IDirect3DTexture8** out) override {
-        *out = new (std::nothrow) Texture8(this, w, h, levels, fmt, s3tc_);
+        const bool rt = (usage & D3DUSAGE_RENDERTARGET) != 0;
+        *out = new (std::nothrow) Texture8(this, w, h, levels, fmt, s3tc_, rt);
         return *out ? S_OK : E_OUTOFMEMORY;
     }
 
@@ -422,7 +430,14 @@ public:
     HRESULT STDMETHODCALLTYPE CopyRects(IDirect3DSurface8*, const RECT*, UINT, IDirect3DSurface8*, const POINT*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE UpdateTexture(IDirect3DBaseTexture8*, IDirect3DBaseTexture8*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE GetFrontBuffer(IDirect3DSurface8*) override { return D3DERR_INVALIDCALL; }
-    HRESULT STDMETHODCALLTYPE SetRenderTarget(IDirect3DSurface8*, IDirect3DSurface8*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE SetRenderTarget(IDirect3DSurface8* rt, IDirect3DSurface8*) override {
+        // A texture-backed surface routes rendering into its GL texture via an FBO;
+        // a standalone surface (or null) means "restore the window framebuffer."
+        // The depth surface is ignored: the device manages its own RT depth buffer.
+        GLTexture* color = rt ? static_cast<Surface8*>(rt)->OwningGlTexture() : nullptr;
+        core_.SetRenderTarget(color);
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE GetRenderTarget(IDirect3DSurface8** s) override {
         if (!s) return E_POINTER;
         *s = new (std::nothrow) Surface8(this, bbW_, bbH_, bbFmt_);

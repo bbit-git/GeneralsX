@@ -59,6 +59,11 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
 
     s += "uniform mat4 uWorld;\nuniform mat4 uView;\nuniform mat4 uProj;\n";
     if (k.isPretransformed) s += "uniform vec4 uViewport;\n"; // (x,y,w,h) in pixels
+    // Per-stage texture-transform matrix, declared only for stages that generate
+    // or transform their coords (e.g. projected shadow decals).
+    for (int i = 0; i < kMaxStages; ++i)
+        if (k.stages[i].colorOp != TOP_DISABLE && (k.stages[i].texGen || k.stages[i].texXform))
+            s += "uniform mat4 uTexMatrix" + std::to_string(i) + ";\n";
 
     // varyings
     s += "out vec4 vColor;\nout vec4 vSpecular;\n";
@@ -79,7 +84,14 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
         }
     }
 
+    // Does any stage generate coords from camera-space position (projected
+    // shadows)? If so we hoist the eye-space position to function scope.
+    bool needCS = false;
+    for (int i = 0; i < kMaxStages; ++i)
+        if (k.stages[i].colorOp != TOP_DISABLE && k.stages[i].texGen == 2) needCS = true;
+
     s += "void main(){\n";
+    if (needCS) s += "  vec4 csPos = vec4(0.0,0.0,0.0,1.0);\n";
 
     // D3DCOLOR vertex attributes arrive BGRA (little-endian DWORD read as 4
     // normalised bytes), so swizzle .bgra to get RGBA the rest of the shader
@@ -105,6 +117,7 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
         s += "  vec4 worldPos = uWorld * aPos;\n";
         s += "  vec4 viewPos = uView * worldPos;\n";
         s += "  gl_Position = uProj * viewPos;\n";
+        if (needCS) s += "  csPos = vec4(viewPos.xyz, 1.0);\n";
 
         if (k.lightingEnabled && k.hasNormal) {
             s += "  vec3 N = normalize(mat3(uWorld) * aNormal);\n";
@@ -141,15 +154,29 @@ std::string FFPShaderCache::GenerateVertexShader(const FFPKey& k) {
         }
     }
 
-    // texcoords: route each enabled stage to its source coord set
+    // texcoords: each enabled stage either passes a vertex coord set through, or
+    // generates coords from camera-space position (projected-shadow texgen), then
+    // optionally runs them through the stage's texture-transform matrix.
     for (int i = 0; i < kMaxStages; ++i) {
         if (k.stages[i].colorOp == TOP_DISABLE) continue;
-        int src = k.stages[i].texCoordIndex;
-        if (src >= k.numTexCoords) src = 0;
-        if (k.numTexCoords > 0)
-            s += "  vTex" + std::to_string(i) + " = aTex" + std::to_string(src) + ";\n";
-        else
-            s += "  vTex" + std::to_string(i) + " = vec2(0.0);\n";
+        const std::string si = std::to_string(i);
+        // 4-component source coordinate.
+        std::string base;
+        if (k.stages[i].texGen == 2) {            // TCI_CAMERASPACEPOSITION
+            base = "csPos";
+        } else {                                   // passthru (TCI 0; normal/reflection
+                                                    // fall back to passthru — unused here)
+            int src = k.stages[i].texCoordIndex;
+            if (src >= k.numTexCoords) src = 0;
+            base = (k.numTexCoords > 0)
+                 ? ("vec4(aTex" + std::to_string(src) + ", 0.0, 1.0)")
+                 : "vec4(0.0, 0.0, 0.0, 1.0)";
+        }
+        // Texture-transform matrix (COUNT2: take .xy of the transformed coord).
+        const std::string coord = k.stages[i].texXform
+            ? ("(uTexMatrix" + si + " * " + base + ").xy")
+            : (base + ".xy");
+        s += "  vTex" + si + " = " + coord + ";\n";
     }
     s += "}\n";
     return s;
@@ -347,6 +374,8 @@ const FFPProgram* FFPShaderCache::GetProgram(const FFPKey& key) {
     for (int i = 0; i < kMaxStages; ++i) {
         std::string n = "uSampler" + std::to_string(i);
         fp.uSampler[i] = glGetUniformLocation(prog, n.c_str());
+        std::string tm = "uTexMatrix" + std::to_string(i);
+        fp.uTexMatrix[i] = glGetUniformLocation(prog, tm.c_str());
     }
 
     auto res = cache_.emplace(key, fp);

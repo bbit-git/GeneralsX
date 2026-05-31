@@ -32,6 +32,12 @@ struct StageKey {
     uint8_t  alphaArg2 = 1;   // CURRENT
     uint8_t  texCoordIndex = 0;
     uint8_t  textureBound  = 0; // 0/1 — is a texture set on this stage
+    // D3DTSS_TEXCOORDINDEX high word: 0=passthru, 1=camera-space normal,
+    // 2=camera-space position, 3=camera-space reflection. Projected shadows use 2.
+    uint8_t  texGen        = 0;
+    // D3DTSS_TEXTURETRANSFORMFLAGS count (0=disabled, 2=COUNT2, 3=COUNT3, 4=COUNT4);
+    // when non-zero the generated/passthru coords are run through uTexMatrix[i].
+    uint8_t  texXform      = 0;
 };
 
 // Whole-pipeline fixed-function key. Trivially memcmp/hash-able (no padding gaps
