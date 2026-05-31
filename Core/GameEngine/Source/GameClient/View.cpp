@@ -96,7 +96,9 @@ void View::init()
 	m_zoomLimited = TRUE;
 
 	m_zoom = 1.0f;
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight;
+	// local: m_maxCameraHeightMultiplier (1.0 unless the "Override max zoom-out" option is on)
+	// scales the zoom-out ceiling. Apply it everywhere m_maxCameraHeight feeds the camera.
+	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight * TheGlobalData->m_maxCameraHeightMultiplier;
 	m_minHeightAboveGround = TheGlobalData->m_minCameraHeight;
 	m_okToAdjustHeight = FALSE;
 

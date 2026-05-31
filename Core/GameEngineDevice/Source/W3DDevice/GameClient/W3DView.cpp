@@ -677,7 +677,9 @@ Real W3DView::getCameraOffsetZ() const
 	}
 #endif
 
-	return m_pos.z + TheGlobalData->m_maxCameraHeight;
+	// local: scale by the user zoom-out multiplier so the zoom ratio (height/offset) stays
+	// consistent with the raised ceiling applied in setDefaultView / View::init.
+	return m_pos.z + TheGlobalData->m_maxCameraHeight * TheGlobalData->m_maxCameraHeightMultiplier;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2259,7 +2261,8 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
 	// MDC - we no longer want to rotate maps (design made all of them right to begin with)
 	//	m_defaultAngle = angle * M_PI/180.0f;
 	setDefaultPitch(pitch);
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight*maxHeight;
+	// local: scale by the user zoom-out multiplier (1.0 unless overridden in Options).
+	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight*maxHeight*TheGlobalData->m_maxCameraHeightMultiplier;
 	if (m_minHeightAboveGround > m_maxHeightAboveGround)
 		m_maxHeightAboveGround = m_minHeightAboveGround;
 }

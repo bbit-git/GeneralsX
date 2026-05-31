@@ -192,6 +192,9 @@ public:
 #endif
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
+	// local: user-controllable multiplier applied to the zoom-out ceiling (m_maxCameraHeight).
+	// 1.0 = shipped behavior. Mirrors the GeneralsMD field so shared Core camera code compiles.
+	Real m_maxCameraHeightMultiplier;
 
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;

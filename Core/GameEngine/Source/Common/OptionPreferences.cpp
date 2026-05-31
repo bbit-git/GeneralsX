@@ -270,6 +270,34 @@ Bool OptionPreferences::getMoveScrollAnchor()
 	return FALSE;
 }
 
+// local: "Override max zoom-out" toggle + multiplier. See OptionPreferences.h.
+Bool OptionPreferences::getMaxCameraZoomOverrideEnabled()
+{
+	OptionPreferences::const_iterator it = find("MaxCameraZoomOverride");
+	if (it == end())
+		return FALSE;
+
+	if (stricmp(it->second.str(), "yes") == 0)
+		return TRUE;
+	return FALSE;
+}
+
+Real OptionPreferences::getMaxCameraZoomMultiplier()
+{
+	// Stored x100 (like ScrollFactor). Slider range is 100..400 => 1.0x .. 4.0x.
+	OptionPreferences::const_iterator it = find("MaxCameraZoomMultiplier");
+	if (it == end())
+		return 1.0f;
+
+	Int factor = atoi(it->second.str());
+	if (factor < 100)
+		factor = 100;
+	if (factor > 400)
+		factor = 400;
+
+	return factor / 100.0f;
+}
+
 Bool OptionPreferences::getCursorCaptureEnabledInWindowedGame() const
 {
 	OptionPreferences::const_iterator it = find("CursorCaptureEnabledInWindowedGame");

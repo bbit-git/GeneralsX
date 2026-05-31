@@ -149,6 +149,18 @@ static GameWindow *   sliderVoiceVolume   = nullptr;
 static NameKeyType    sliderGammaID = NAMEKEY_INVALID;
 static GameWindow *   sliderGamma = nullptr;
 
+// local: "Override max zoom-out" controls. These live in a separately-shipped layout
+// (Menus/ExtraOptionsMenu.wnd, loaded loose) whose windows we re-parent under the stock
+// OptionsMenuParent at runtime so they sit inside the modal input tree and route their
+// notifications to OptionsMenuSystem. See OptionsMenuInit / DestroyOptionsLayout.
+static WindowLayout * extraOptionsLayout = nullptr;
+static NameKeyType    checkMaxZoomOverrideID = NAMEKEY_INVALID;
+static GameWindow *   checkMaxZoomOverride   = nullptr;
+static NameKeyType    sliderMaxZoomID = NAMEKEY_INVALID;
+static GameWindow *   sliderMaxZoom   = nullptr;
+static NameKeyType    labelMaxZoomID = NAMEKEY_INVALID;
+static GameWindow *   labelMaxZoom   = nullptr;
+
 //Advanced Options Screen
 static NameKeyType    WinAdvancedDisplayID      = NAMEKEY_INVALID;
 static GameWindow *   WinAdvancedDisplay				= nullptr;
@@ -651,6 +663,29 @@ static void saveOptions()
 	}
 
 	//-------------------------------------------------------------------------------------------------
+	// local: max camera zoom-out override (checkbox + multiplier slider). Only present if the
+	// ExtraOptionsMenu.wnd layout was loaded. The multiplier takes effect on the next GameData
+	// (re)parse via GlobalData::parseGameDataDefinition; m_maxCameraHeightMultiplier is updated
+	// here so the change is honored without needing a restart.
+	if (checkMaxZoomOverride)
+	{
+		const Bool enabled = GadgetCheckBoxIsChecked(checkMaxZoomOverride);
+		(*pref)["MaxCameraZoomOverride"] = enabled ? "yes" : "no";
+
+		Real multiplier = 1.0f;
+		if (sliderMaxZoom)
+		{
+			Int zpos = GadgetSliderGetPosition(sliderMaxZoom);
+			if (zpos < 100) zpos = 100;
+			AsciiString zStr;
+			zStr.format("%d", zpos);
+			(*pref)["MaxCameraZoomMultiplier"] = zStr;
+			multiplier = zpos / 100.0f;
+		}
+		TheWritableGlobalData->m_maxCameraHeightMultiplier = enabled ? multiplier : 1.0f;
+	}
+
+	//-------------------------------------------------------------------------------------------------
 	// draw scroll anchor
 	{
 		if( TheInGameUI->getDrawRMBScrollAnchor() )
@@ -894,12 +929,106 @@ static void saveOptions()
 	// MUST NEVER ADD ANOTHER OPTION HERE AT THE END !
 }
 
+// local: show/hide the zoom-out slider (and its label) to match the override checkbox.
+static void updateMaxZoomControls()
+{
+	if (!checkMaxZoomOverride)
+		return;
+	const Bool on = GadgetCheckBoxIsChecked(checkMaxZoomOverride);
+	if (sliderMaxZoom)
+		sliderMaxZoom->winHide(!on);
+	if (labelMaxZoom)
+		labelMaxZoom->winHide(!on);
+}
+
 static void DestroyOptionsLayout() {
 
 	SignalUIInteraction(SHELL_SCRIPT_HOOK_OPTIONS_CLOSED);
 
+	// local: destroy our re-parented extra-options windows BEFORE the stock options layout.
+	// winDestroy unlinks each window from its parent (OptionsMenuParent), so the subsequent
+	// stock teardown won't touch (and double-free) them.
+	if (extraOptionsLayout)
+	{
+		extraOptionsLayout->destroyWindows();
+		deleteInstance(extraOptionsLayout);
+		extraOptionsLayout = nullptr;
+	}
+	checkMaxZoomOverride = nullptr;
+	sliderMaxZoom = nullptr;
+	labelMaxZoom = nullptr;
+
 	TheShell->destroyOptionsLayout();
 	OptionsLayout = nullptr;
+}
+
+// local: load Menus/ExtraOptionsMenu.wnd, re-parent its controls under the stock options
+// parent (so they live in the modal input tree) and route their events to OptionsMenuSystem.
+static void loadExtraOptions( GameWindow *optionsParent )
+{
+	if (optionsParent == nullptr)
+		return;
+
+	extraOptionsLayout = TheWindowManager->winCreateLayout( "Menus/ExtraOptionsMenu.wnd" );
+	if (extraOptionsLayout == nullptr)
+	{
+		// Loose .wnd not staged — feature simply absent; engine multiplier still honors the pref.
+		DEBUG_LOG(("ExtraOptionsMenu.wnd not found; skipping in-menu zoom-out override controls"));
+		return;
+	}
+
+	checkMaxZoomOverrideID = TheNameKeyGenerator->nameToKey( "ExtraOptionsMenu.wnd:CheckOverrideMaxZoom" );
+	checkMaxZoomOverride   = TheWindowManager->winGetWindowFromId( nullptr, checkMaxZoomOverrideID );
+	sliderMaxZoomID        = TheNameKeyGenerator->nameToKey( "ExtraOptionsMenu.wnd:SliderMaxZoom" );
+	sliderMaxZoom          = TheWindowManager->winGetWindowFromId( nullptr, sliderMaxZoomID );
+	labelMaxZoomID         = TheNameKeyGenerator->nameToKey( "ExtraOptionsMenu.wnd:LabelMaxZoom" );
+	labelMaxZoom           = TheWindowManager->winGetWindowFromId( nullptr, labelMaxZoomID );
+
+	NameKeyType parentID = TheNameKeyGenerator->nameToKey( "ExtraOptionsMenu.wnd:ExtraOptionsParent" );
+	GameWindow *extraParent = TheWindowManager->winGetWindowFromId( nullptr, parentID );
+
+	// Put our windows inside the modal options tree (otherwise they draw behind the modal
+	// options menu and get no input), and make the stock options window the "owner" of each
+	// gadget so GBM_SELECTED / slider messages reach OptionsMenuSystem. The .wnd lists these
+	// as separate top-level windows, so each must be re-parented individually.
+	if (extraParent)
+		extraParent->winSetParent( optionsParent );
+	if (checkMaxZoomOverride)
+	{
+		checkMaxZoomOverride->winSetParent( optionsParent );
+		checkMaxZoomOverride->winSetOwner( optionsParent );
+	}
+	if (sliderMaxZoom)
+	{
+		sliderMaxZoom->winSetParent( optionsParent );
+		sliderMaxZoom->winSetOwner( optionsParent );
+	}
+
+	// initial values from prefs. NOTE: set the label text at runtime with a literal
+	// UnicodeString — the .wnd TEXT field is a CSF label key (would render "MISSING: ...").
+	if (checkMaxZoomOverride)
+	{
+		UnicodeString lbl;
+		lbl.translate("Override max zoom-out (1x - 4x)");
+		GadgetCheckBoxSetText( checkMaxZoomOverride, lbl );
+		GadgetCheckBoxSetChecked( checkMaxZoomOverride, pref->getMaxCameraZoomOverrideEnabled() );
+	}
+	if (labelMaxZoom)
+	{
+		UnicodeString lbl;
+		lbl.translate("Zoom-out multiplier");
+		GadgetStaticTextSetText( labelMaxZoom, lbl );
+	}
+	if (sliderMaxZoom)
+	{
+		Int sMin, sMax;
+		GadgetSliderGetMinMax( sliderMaxZoom, &sMin, &sMax );
+		Int pos = REAL_TO_INT( pref->getMaxCameraZoomMultiplier() * 100.0f );
+		if (pos < sMin) pos = sMin;
+		if (pos > sMax) pos = sMax;
+		GadgetSliderSetPosition( sliderMaxZoom, pos );
+	}
+	updateMaxZoomControls();
 }
 
 static void showAdvancedOptions()
@@ -1397,6 +1526,9 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	GameWindow *parent = TheWindowManager->winGetWindowFromId( nullptr, parentID );
 	TheWindowManager->winSetFocus( parent );
 
+	// local: load + integrate the "Override max zoom-out" controls (no-op if .wnd not present)
+	loadExtraOptions( parent );
+
 	if( (TheGameLogic->isInGame() && TheGameLogic->getGameMode() != GAME_SHELL) || TheGameSpyInfo )
 	{
 		// disable controls that you can't change the options for in game
@@ -1659,6 +1791,11 @@ WindowMsgHandledType OptionsMenuSystem( GameWindow *window, UnsignedInt msg,
 			else if ( controlID == buttonKeyboardOptionsMenu )
 			{
 				TheShell->push( "Menus/KeyboardOptionsMenu.wnd" );
+			}
+			// local: show/hide the zoom-out slider when the override checkbox is toggled
+			else if ( controlID == checkMaxZoomOverrideID && checkMaxZoomOverrideID != NAMEKEY_INVALID )
+			{
+				updateMaxZoomControls();
 			}
 			else if(controlID == checkDrawAnchorID )
       {

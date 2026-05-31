@@ -193,6 +193,11 @@ public:
 #endif
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
+	// local: user-controllable multiplier applied to the zoom-out ceiling (m_maxCameraHeight).
+	// 1.0 = shipped behavior. Driven by the "Override max zoom-out" option (see OptionPreferences
+	// MaxCameraZoom*). Applied at the camera-height consumption sites (View::init,
+	// W3DView::setDefaultView, W3DView::getCameraOffsetZ) so the zoom ratio stays consistent.
+	Real m_maxCameraHeightMultiplier;
 
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;

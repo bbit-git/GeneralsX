@@ -74,6 +74,10 @@ public:
 	Real getScrollFactor();
 	Bool getDrawScrollAnchor();
 	Bool getMoveScrollAnchor();
+	// local: optional override of the tactical camera zoom-out ceiling. When enabled, the
+	// multiplier scales GlobalData::m_maxCameraHeight (1.0 = shipped). Stored x100 like ScrollFactor.
+	Bool getMaxCameraZoomOverrideEnabled();
+	Real getMaxCameraZoomMultiplier();
 	Bool getCursorCaptureEnabledInWindowedGame() const;
 	Bool getCursorCaptureEnabledInWindowedMenu() const;
 	Bool getCursorCaptureEnabledInFullscreenGame() const;

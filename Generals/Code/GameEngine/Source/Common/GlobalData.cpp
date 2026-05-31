@@ -855,6 +855,7 @@ GlobalData::GlobalData()
 #endif
 	m_minCameraHeight = 100.0f;
 	m_maxCameraHeight = 300.0f;
+	m_maxCameraHeightMultiplier = 1.0f;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;
@@ -1196,6 +1197,10 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 
 	// override INI values with user preferences
 	OptionPreferences optionPref;
+	// local: optional "Override max zoom-out" setting. Store the multiplier (not the scaled
+	// height); applied at the camera-height consumption sites. Idempotent across reloads.
+	TheWritableGlobalData->m_maxCameraHeightMultiplier =
+		optionPref.getMaxCameraZoomOverrideEnabled() ? optionPref.getMaxCameraZoomMultiplier() : 1.0f;
 	TheWritableGlobalData->m_useAlternateMouse = optionPref.getAlternateMouseModeEnabled();
 	TheWritableGlobalData->m_clientRetaliationModeEnabled = optionPref.getRetaliationModeEnabled();
 	TheWritableGlobalData->m_doubleClickAttackMove = optionPref.getDoubleClickAttackMoveEnabled();
