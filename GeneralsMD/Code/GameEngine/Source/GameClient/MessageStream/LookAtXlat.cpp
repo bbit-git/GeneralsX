@@ -307,6 +307,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			const UnsignedInt PIXEL_OFFSET = 5;
 
 			m_isRotating = false;
+			m_isPitching = false;
 			Int dx = m_currentPos.x-m_originalAnchor.x;
 			if (dx<0) dx = -dx;
 			Int dy = m_currentPos.y-m_originalAnchor.y;
@@ -378,7 +379,10 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				}
 
 				TheTacticalView->userSetAngle(targetAngle);
-				m_anchor = msg->getArgument( 0 )->pixel;
+				// NOTE: rotation derives its angle from m_originalAnchor/m_anchorAngle and
+				// does not use m_anchor. Don't update m_anchor here — the pitch block below
+				// uses m_anchor.y as its incremental reference, and clobbering it to the
+				// current pixel would zero out the pitch delta on every move.
 			}
 
 			// rotate the view up/down
