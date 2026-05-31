@@ -66,6 +66,18 @@ bool GLES3Device::Init(int w, int h) {
     // get culled) and exposing the back/inside faces of closed meshes (the whole
     // scene appeared to render "from inside"). MapCull() is paired with this winding.
     glFrontFace(GL_CCW);
+
+    // Seed D3D8 default render states. The engine only ever writes the states it
+    // wants to *change*; for anything it never sets it relies on D3D's documented
+    // defaults. Most critically D3DRS_ZENABLE defaults to TRUE — WW3D never sets
+    // it (it manages only ZFUNC/ZWRITEENABLE per shader). Our zero-init left it
+    // FALSE, so the whole 3D scene ran with depth testing off and drew in painter
+    // order, letting late/bright surfaces erase the scene to white. Seed the
+    // depth defaults (others already have apply-time fallbacks).
+    renderStates_[RS_ZENABLE]      = 1;  // D3DZB_TRUE
+    renderStates_[RS_ZWRITEENABLE] = 1;  // TRUE
+    renderStates_[RS_ZFUNC]        = 4;  // D3DCMP_LESSEQUAL
+
     initialized_ = true;
     return true;
 }

@@ -350,6 +350,10 @@ int main(int argc, char* argv[])
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+			// The W3D scene needs depth testing (and stencil for shadows); request
+			// the buffers explicitly so every EGLConfig we get has them.
+			SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+			SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
 			fprintf(stderr, "INFO: Creating SDL3 OpenGL ES window...\n");
 			// Android ignores the requested size and uses the full display.
