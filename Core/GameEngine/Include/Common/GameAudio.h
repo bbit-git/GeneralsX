@@ -296,6 +296,8 @@ class AudioManager : public SubsystemInterface
 		// For the file cache to know when to remove files.
 		virtual void closeAnySamplesUsingFile( const void *fileToClose ) = 0;
 
+		virtual Bool isMusicAlreadyLoaded() const;
+
 		Bool getDisallowSpeech() const { return m_disallowSpeech; }
 		void setDisallowSpeech( Bool disallowSpeech ) { m_disallowSpeech = disallowSpeech; }
 

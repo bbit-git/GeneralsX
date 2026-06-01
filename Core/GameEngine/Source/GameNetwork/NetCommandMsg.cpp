@@ -224,10 +224,6 @@ void NetGameCommandMsg::setGameMessageType(GameMessage::Type type) {
 	m_type = type;
 }
 
-GameMessage::Type NetGameCommandMsg::getGameMessageType() const {
-	return m_type;
-}
-
 NetCommandMsg::Select NetGameCommandMsg::getSmallNetPacketSelect() const {
 	Select select;
 	select.useCommandType = 1;
@@ -941,11 +937,12 @@ UnsignedByte * NetWrapperCommandMsg::getData() {
 	return m_data;
 }
 
-void NetWrapperCommandMsg::setData(NetCommandDataChunk &dataChunk)
+void NetWrapperCommandMsg::setData(UnsignedByte *data, UnsignedInt dataLength)
 {
 	delete[] m_data;
-	m_dataLength = dataChunk.size();
-	m_data = dataChunk.release();
+	m_data = NEW UnsignedByte[dataLength];	// pool[]ify
+	memcpy(m_data, data, dataLength);
+	m_dataLength = dataLength;
 }
 
 UnsignedInt NetWrapperCommandMsg::getDataLength() const {
@@ -1039,11 +1036,11 @@ UnsignedByte * NetFileCommandMsg::getFileData() {
 	return m_data;
 }
 
-void NetFileCommandMsg::setFileData(NetCommandDataChunk &dataChunk)
+void NetFileCommandMsg::setFileData(UnsignedByte *data, UnsignedInt dataLength)
 {
-	delete[] m_data;
-	m_dataLength = dataChunk.size();
-	m_data = dataChunk.release();
+	m_dataLength = dataLength;
+	m_data = NEW UnsignedByte[dataLength];	// pool[]ify
+	memcpy(m_data, data, dataLength);
 }
 
 NetCommandMsg::Select NetFileCommandMsg::getSmallNetPacketSelect() const {

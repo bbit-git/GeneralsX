@@ -4119,10 +4119,12 @@ void Object::xfer( Xfer *xfer )
 	Drawable *draw = getDrawable();
 	DrawableID drawableID = draw ? draw->getID() : INVALID_DRAWABLE_ID;
 	xfer->xferDrawableID( &drawableID );
-	if (draw && xfer->getXferMode() == XFER_LOAD)
+	if( xfer->getXferMode() == XFER_LOAD )
 	{
+
 		// change the ID of the drawable attached to be the same ID as it was when it was saved
-		draw->setID(drawableID);
+		draw->setID( drawableID );
+
 	}
 
 	// internal name

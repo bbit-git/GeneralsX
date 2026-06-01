@@ -36,61 +36,6 @@
 class NetCommandRef;
 
 //-----------------------------------------------------------------------------
-class NetCommandDataChunk
-{
-	NetCommandDataChunk(const NetCommandDataChunk&) CPP_11(= delete);
-	void operator=(const NetCommandDataChunk&) CPP_11(= delete);
-
-public:
-	NetCommandDataChunk(Byte *data, UnsignedInt size)
-		: m_data(reinterpret_cast<UnsignedByte *>(data))
-		, m_size(size)
-	{}
-
-	NetCommandDataChunk(UnsignedByte *data, UnsignedInt size)
-		: m_data(data)
-		, m_size(size)
-	{}
-
-	NetCommandDataChunk(UnsignedInt size)
-		: m_data(NEW UnsignedByte[size])
-		, m_size(size)
-	{}
-
-	~NetCommandDataChunk()
-	{
-		delete[] m_data;
-	}
-
-	const UnsignedByte *data() const
-	{
-		return m_data;
-	}
-
-	UnsignedByte *data()
-	{
-		return m_data;
-	}
-
-	UnsignedInt size() const
-	{
-		return m_size;
-	}
-
-	UnsignedByte *release()
-	{
-		UnsignedByte *ret = m_data;
-		m_data = nullptr;
-		m_size = 0;
-		return ret;
-	}
-
-private:
-	UnsignedByte *m_data;
-	UnsignedInt m_size;
-};
-
-//-----------------------------------------------------------------------------
 class NetCommandMsg : public MemoryPoolObject
 {
 	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(NetCommandMsg, "NetCommandMsg")
@@ -115,7 +60,6 @@ public:
 	virtual size_t getSizeForSmallNetPacket(const Select* select = nullptr) const = 0;
 	virtual size_t copyBytesForSmallNetPacket(UnsignedByte* buffer, const NetCommandRef& ref, const Select* select = nullptr) const = 0;
 	virtual Select getSmallNetPacketSelect() const = 0;
-	virtual size_t readMessageData(NetCommandRef& ref, NetPacketBuf buf) const = 0;
 	void attach();
 	void detach();
 
@@ -152,11 +96,6 @@ class NetCommandMsgT : public NetCommandMsg
 	{
 		return SmallNetPacketType::copyBytes(buffer, ref, select);
 	}
-
-	virtual size_t readMessageData(NetCommandRef& ref, NetPacketBuf buf) const override
-	{
-		return SmallNetPacketType::CommandData::readMessage(ref, buf);
-	}
 };
 
 //-----------------------------------------------------------------------------
@@ -174,7 +113,6 @@ public:
 	GameMessage *constructGameMessage() const;
 	void addArgument(const GameMessageArgumentDataType type, GameMessageArgumentType arg);
 	void setGameMessageType(GameMessage::Type type);
-	GameMessage::Type getGameMessageType() const;
 
 	virtual Select getSmallNetPacketSelect() const override;
 
@@ -502,7 +440,7 @@ public:
 
 	const UnsignedByte * getData() const;
 	UnsignedByte * getData();
-	void setData(NetCommandDataChunk &dataChunk);
+	void setData(UnsignedByte *data, UnsignedInt dataLength);
 
 	UnsignedInt getChunkNumber() const;
 	void setChunkNumber(UnsignedInt chunkNumber);
@@ -552,7 +490,7 @@ public:
 
 	const UnsignedByte * getFileData() const;
 	UnsignedByte * getFileData();
-	void setFileData(NetCommandDataChunk &dataChunk);
+	void setFileData(UnsignedByte *data, UnsignedInt dataLength);
 
 	virtual Select getSmallNetPacketSelect() const override;
 

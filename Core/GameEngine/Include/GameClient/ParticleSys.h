@@ -753,8 +753,6 @@ public:
 	virtual void reset() override;									///< reset the manager and all particle systems
 	virtual void update() override;								///< update all particle systems
 
-	virtual Bool isDummy() const { return false; }
-
 	virtual Int getOnScreenParticleCount() = 0;   ///< returns the number of particles on screen
   virtual void setOnScreenParticleCount(int count);
 
@@ -763,7 +761,8 @@ public:
 	ParticleSystemTemplate *newTemplate( const AsciiString &name );
 
 	/// given a template, instantiate a particle system
-	ParticleSystem *createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves = TRUE );
+	ParticleSystem *createParticleSystem( const ParticleSystemTemplate *sysTemplate,
+																				Bool createSlaves = TRUE );
 
 	/** given a template, instantiate a particle system.
 		if attachTo is not null, attach the particle system to the given object.
@@ -836,10 +835,8 @@ private:
 	ParticleSystemIDMap m_systemMap; ///< a hash map of all particle systems
 };
 
-
 // TheSuperHackers @feature bobtista 31/01/2026
 // ParticleSystemManager that does nothing. Used for Headless Mode.
-// Generally does not load particle system templates. Certainly does not create particle systems.
 class ParticleSystemManagerDummy : public ParticleSystemManager
 {
 public:
@@ -852,8 +849,6 @@ public:
 #endif
 	// GeneralsX @bugfix fbraz 04/05/2026 Prevent headless replay from entering full particle update path.
 	virtual void update() override {}
-
-	virtual Bool isDummy() const override { return true; }
 	virtual Int getOnScreenParticleCount() override { return 0; }
 	virtual void doParticles(RenderInfoClass &rinfo) override {}
 	virtual void queueParticleRender() override {}

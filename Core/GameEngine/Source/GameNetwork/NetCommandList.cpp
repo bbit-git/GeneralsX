@@ -128,19 +128,13 @@ void NetCommandList::reset() {
  */
 NetCommandRef * NetCommandList::addMessage(NetCommandMsg *cmdMsg) {
 	if (cmdMsg == nullptr) {
-		DEBUG_CRASH(("NetCommandList::addMessage - command message was null"));
+		DEBUG_ASSERTCRASH(cmdMsg != nullptr, ("NetCommandList::addMessage - command message was null"));
 		return nullptr;
 	}
+
+//	UnsignedInt id = cmdMsg->getID();
 
 	NetCommandRef *msg = NEW_NETCOMMANDREF(cmdMsg);
-	return addMessage(msg);
-}
-
-NetCommandRef * NetCommandList::addMessage(NetCommandRef *&msg) {
-	if (msg == nullptr) {
-		DEBUG_CRASH(("NetCommandList::addMessage - command ref was null"));
-		return nullptr;
-	}
 
 	if (m_first == nullptr) {
 		// this is the first node, so we don't have to worry about ordering it.
@@ -310,7 +304,6 @@ NetCommandRef * NetCommandList::addMessage(NetCommandRef *&msg) {
 
 			// This command is already in the list, don't duplicate it.
 			deleteInstance(msg);
-			msg = nullptr;
 			return nullptr;
 		}
 
