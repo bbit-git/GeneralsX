@@ -139,6 +139,7 @@ public:
 	virtual void initHeightForMap() {};														///< Init the camera height for the map at the current position.
 	virtual void resetPivotToGround() {};													///< Set the camera pivot to the terrain height at the current position.
 	virtual void scrollBy( const Coord2D *delta );														///< Shift the view by the given delta
+	virtual void scrollByPixelGrab( const ICoord2D *fromPixel, const ICoord2D *toPixel ) {}  ///< 1:1 grab-pan: shift so the world point under fromPixel ends up under toPixel (scales with zoom)
 
 	virtual void moveCameraTo(const Coord3D *o, Int frames, Int shutter, Bool orient, Real easeIn=0.0f, Real easeOut=0.0f) { lookAt( o ); }
 	virtual void moveCameraAlongWaypointPath(Waypoint *way, Int frames, Int shutter, Bool orient, Real easeIn=0.0f, Real easeOut=0.0f) { }
@@ -222,6 +223,7 @@ public:
 	Bool userLookAt(const Coord3D *o)                    { return doUserAction(&View::lookAt, o); }
 	Bool userResetPivotToGround()                        { return doUserAction(&View::resetPivotToGround); }
 	Bool userScrollBy(const Coord2D *delta)              { return doUserAction(&View::scrollBy, delta); }
+	Bool userScrollByPixelGrab(const ICoord2D *fromPixel, const ICoord2D *toPixel) { return doUserAction(&View::scrollByPixelGrab, fromPixel, toPixel); }
 	Bool userSetLocation(const ViewLocation *location)   { return doUserAction(&View::setLocation, location); }
 	Bool userSetCameraLock(ObjectID id)                  { return doUserAction(&View::setCameraLock, id); }
 	Bool userSetCameraLockDrawable(Drawable *drawable)   { return doUserAction(&View::setCameraLockDrawable, drawable); }
@@ -302,6 +304,17 @@ private:
 		stopDoingScriptedCamera();
 		setUserControlled(true);
 		(this->*function)(arg1);
+		return true;
+	}
+
+	template<typename Function, typename Arg1, typename Arg2>
+	Bool doUserAction(Function function, Arg1 arg1, Arg2 arg2)
+	{
+		if (isUserControlLocked())
+			return false;
+		stopDoingScriptedCamera();
+		setUserControlled(true);
+		(this->*function)(arg1, arg2);
 		return true;
 	}
 

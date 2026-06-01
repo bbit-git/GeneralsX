@@ -165,6 +165,7 @@ public:
 	virtual void setOrigin( Int x, Int y) override;			///< Sets location of top-left view corner on display
 
 	virtual void scrollBy( const Coord2D *delta ) override;  ///< Shift the view by the given delta
+	virtual void scrollByPixelGrab( const ICoord2D *fromPixel, const ICoord2D *toPixel ) override;  ///< 1:1 grab-pan that scales with zoom
 
 	virtual void forceRedraw() override;
 

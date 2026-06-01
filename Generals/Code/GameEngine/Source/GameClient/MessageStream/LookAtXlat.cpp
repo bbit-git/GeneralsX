@@ -457,18 +457,27 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				// TheSuperHackers @bugfix Mauller 07/06/2025 The camera scrolling is now decoupled from the render update.
 				const Real fpsRatio = TheFramePacer->getBaseOverUpdateFpsRatio();
 
+				// local: set when the RMB grab/drag path applies its own depth-correct pan, so the
+				// shared screen-delta scroll below is skipped.
+				Bool didPixelGrab = false;
+
 				switch (m_scrollType)
 				{
 				case SCROLL_RMB:
 					{
 						if (TheGlobalData->m_dragScrollEnabled)
 						{
-							// local: grab/drag panning. The map tracks the cursor 1:1 - scroll the view
-							// opposite to the per-frame mouse delta so the grabbed point stays pinned under
-							// the cursor. This is positional, so no fps ratio or scroll-factor scaling applies.
+							// local: grab/drag panning. The map tracks the cursor 1:1 - the view is panned
+							// so the grabbed world point stays pinned under the cursor. Projecting onto the
+							// focus plane (instead of the fixed unit view plane scrollBy uses) makes the pan
+							// distance scale with zoom, so it no longer feels too slow when zoomed out. This
+							// is positional, so no fps ratio or scroll-factor scaling applies.
 							offset.x = (Real)(m_dragLastPos.x - m_currentPos.x);
 							offset.y = (Real)(m_dragLastPos.y - m_currentPos.y);
+							TheInGameUI->setScrollAmount(offset);
+							TheTacticalView->userScrollByPixelGrab(&m_dragLastPos, &m_currentPos);
 							m_dragLastPos = m_currentPos;
+							didPixelGrab = true;
 							break;
 						}
 
@@ -543,8 +552,11 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 					break;
 				}
 
-				TheInGameUI->setScrollAmount(offset);
-				TheTacticalView->userScrollBy( &offset );
+				if (!didPixelGrab)
+				{
+					TheInGameUI->setScrollAmount(offset);
+					TheTacticalView->userScrollBy( &offset );
+				}
 			}
 			else
 			{

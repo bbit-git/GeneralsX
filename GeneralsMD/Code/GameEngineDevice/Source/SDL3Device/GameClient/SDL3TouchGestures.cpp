@@ -177,16 +177,16 @@ namespace
 	void panBy(float curX, float curY)
 	{
 		if (!TheTacticalView || !TheDisplay) return;
-		// Scroll the view opposite to the per-frame finger delta so the grabbed
-		// point stays pinned under the finger, matching the desktop
-		// m_dragScrollEnabled path (LookAtXlat.cpp: offset = lastPos - currentPos,
-		// in display pixels). Convert window px -> display px for a 1:1 grab.
+		// Grab & drag: pan so the world point under the finger stays pinned to the finger.
+		// Project the previous and current finger positions onto the camera focus plane so the
+		// pan distance scales with zoom and stays 1:1 at any zoom level (a fixed screen-delta
+		// scroll feels too slow when zoomed out). Convert window px -> display px first.
 		const float scaleX = (float)TheDisplay->getWidth()  / (float)g_winW;
 		const float scaleY = (float)TheDisplay->getHeight() / (float)g_winH;
-		Coord2D offset;
-		offset.x = (g_lastX - curX) * scaleX;
-		offset.y = (g_lastY - curY) * scaleY;
-		TheTacticalView->userScrollBy(&offset);
+		ICoord2D from, to;
+		from.x = (Int)(g_lastX * scaleX); from.y = (Int)(g_lastY * scaleY);
+		to.x   = (Int)(curX   * scaleX); to.y   = (Int)(curY   * scaleY);
+		TheTacticalView->userScrollByPixelGrab(&from, &to);
 	}
 
 	float angleDelta(float a, float b)

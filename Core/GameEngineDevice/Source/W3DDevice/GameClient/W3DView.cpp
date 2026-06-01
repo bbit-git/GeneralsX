@@ -2161,6 +2161,47 @@ void W3DView::scrollBy( const Coord2D *delta )
 }
 
 //-------------------------------------------------------------------------------------------------
+// Grab-pan the view so the world point currently under fromPixel ends up under toPixel.
+//
+// local: scrollBy() maps the screen delta on the fixed unit view plane (Device_To_View_Space
+// returns Z = -1), so it moves a constant world distance per pixel regardless of zoom - which makes
+// a grab/touch drag feel too slow when zoomed out (camera high, ground far). This instead projects
+// both screen points onto the camera focus plane, so the world distance per pixel scales with camera
+// height and the grab stays pinned 1:1 to the ground at any zoom. Pitch and yaw are handled exactly
+// by the pick ray, so no manual Z-rotation or magic resolution constant is needed.
+//-------------------------------------------------------------------------------------------------
+void W3DView::scrollByPixelGrab( const ICoord2D *fromPixel, const ICoord2D *toPixel )
+{
+	if( fromPixel && toPixel && (fromPixel->x != toPixel->x || fromPixel->y != toPixel->y) )
+	{
+		// project both screen points onto the camera focus plane (the look-at pivot height)
+		const Real groundZ = m_pos.z;
+		Coord3D fromWorld, toWorld;
+		screenToWorldAtZ( fromPixel, &fromWorld, groundZ );
+		screenToWorldAtZ( toPixel, &toWorld, groundZ );
+
+		// move the view opposite to the cursor travel so the grabbed point stays under the cursor
+		Coord2D pos = getPosition2D();
+		pos.x += fromWorld.x - toWorld.x;
+		pos.y += fromWorld.y - toWorld.y;
+		setPosition2D(pos);
+
+		// keep the height-adjust gating (m_scrollAmountCutoffSqr) in screen-pixel units, matching
+		// the units scrollBy stored for the legacy drag path
+		m_scrollAmount.x = (Real)(fromPixel->x - toPixel->x);
+		m_scrollAmount.y = (Real)(fromPixel->y - toPixel->y);
+
+		removeScriptedState(Scripted_Rotate);
+		m_recalcCamera = true;
+	}
+	else
+	{
+		m_scrollAmount.x = 0;
+		m_scrollAmount.y = 0;
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 void W3DView::forceRedraw()
 {
